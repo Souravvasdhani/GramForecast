@@ -1,0 +1,90 @@
+version: "3.9"
+
+services:
+  # ─────────────────────────────────────────────
+  # PostgreSQL Database
+  # ─────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: gramforecast_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-gramforecast}
+      POSTGRES_USER: ${DB_USER:-gramuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-grampassword}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-gramuser} -d ${DB_NAME:-gramforecast}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # FastAPI Backend
+  # ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gramforecast_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-gramuser}:${DB_PASSWORD:-grampassword}@postgres:5432/${DB_NAME:-gramforecast}
+      JWT_SECRET: ${JWT_SECRET:-supersecretjwtkeychangeinprod}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 1440
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ─────────────────────────────────────────────
+  # ML Forecasting Service (one-shot job + API)
+  # ─────────────────────────────────────────────
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: gramforecast_ml
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-gramuser}:${DB_PASSWORD:-grampassword}@postgres:5432/${DB_NAME:-gramforecast}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./ml-service:/app
+    command: uvicorn api:app --host 0.0.0.0 --port 8001 --reload
+
+  # ─────────────────────────────────────────────
+  # Database Seeder (runs once then exits)
+  # ─────────────────────────────────────────────
+  seeder:
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    container_name: gramforecast_seeder
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-gramuser}:${DB_PASSWORD:-grampassword}@postgres:5432/${DB_NAME:-gramforecast}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./database:/app
+    command: python seed.py
+    profiles:
+      - seed  # Run manually: docker compose --profile seed up seeder
+
+volumes:
+  postgres_data:
