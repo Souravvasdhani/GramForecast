@@ -147,6 +147,7 @@ def dashboard_summary(
             models.Product.unit,
             models.Product.current_stock,
             models.Product.ideal_stock,
+            models.Product.safety_stock,
             models.Product.selling_price,
             func.sum(models.Sale.quantity).label("sales_7d"),
         )
@@ -158,7 +159,8 @@ def dashboard_summary(
         .group_by(
             models.Product.id, models.Product.name, models.Product.category,
             models.Product.unit, models.Product.current_stock,
-            models.Product.ideal_stock, models.Product.selling_price,
+            models.Product.ideal_stock, models.Product.safety_stock,
+            models.Product.selling_price,
         )
         .order_by(func.sum(models.Sale.quantity).desc())
         .limit(6)

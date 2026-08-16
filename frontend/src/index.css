@@ -106,10 +106,18 @@
     height: var(--topbar-height);
     left: var(--sidebar-width);
   }
+  .app-shell {
+    @apply relative bg-gray-50;
+    height: 100vh;
+    overflow: hidden;
+  }
   .content-area {
-    padding-top: var(--topbar-height);
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     margin-left: var(--sidebar-width);
-    @apply min-h-screen p-6 bg-gray-50;
+    padding: calc(var(--topbar-height) + 1.5rem) 1.5rem 1.5rem;
+    @apply bg-gray-50;
   }
 
   @media (max-width: 1024px) {
@@ -140,8 +148,7 @@
     }
     .content-area {
       margin-left: 0;
-      padding: 1rem;
-      padding-top: calc(var(--topbar-height) + 0.75rem);
+      padding: calc(var(--topbar-height) + 0.75rem) 1rem 1rem;
     }
   }
 
@@ -158,8 +165,7 @@
       width: 100%;
     }
     .content-area {
-      padding: 0.75rem;
-      padding-top: calc(var(--topbar-height) + 1.25rem);
+      padding: calc(var(--topbar-height) + 1.25rem) 0.75rem 0.75rem;
     }
     .sidebar-nav {
       grid-template-columns: 1fr;

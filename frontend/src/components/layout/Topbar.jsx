@@ -2,15 +2,22 @@
  * Topbar — fixed header with page title, date range, notification bell, avatar.
  * DESIGN.md §3 — top bar specification.
  */
-import { Bell, ChevronDown, Menu, Calendar } from "lucide-react";
+import { Bell, ChevronDown, LogOut, Calendar } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
 export default function Topbar({ title, description }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   const today = new Date().toLocaleDateString("en-IN", {
     weekday: "short", day: "numeric", month: "short", year: "numeric",
   });
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <header className="topbar">
@@ -52,6 +59,16 @@ export default function Topbar({ title, description }) {
           </div>
           <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 transition-colors" />
         </div>
+
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-[11px] font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+          aria-label="Logout"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Logout</span>
+        </button>
       </div>
     </header>
   );
