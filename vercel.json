@@ -6,7 +6,19 @@
         },
         "backend": {
             "root": "backend",
-            "entrypoint": "main.py"
+            "entrypoint": "main:app",
+            "routes": [
+                {
+                    "src": "/api/(.*)",
+                    "transforms": [
+                        {
+                            "type": "request.path",
+                            "op": "set",
+                            "args": "/$1"
+                        }
+                    ]
+                }
+            ]
         }
     },
     "rewrites": [
