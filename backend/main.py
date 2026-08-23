@@ -47,7 +47,23 @@ app.include_router(alerts.router,    prefix="/alerts",    tags=["Alerts"])
 app.include_router(market.router,    prefix="/market",    tags=["Market"])
 app.include_router(ai.router,        prefix="/ai",        tags=["AI"])
 
+# Keep the /api-prefixed routes available for same-origin Vercel deployments.
+app.include_router(auth.router,      prefix="/api/auth",      tags=["Auth"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
+app.include_router(forecast.router,  prefix="/api/forecast",  tags=["Forecast"])
+app.include_router(products.router,  prefix="/api/products",  tags=["Products"])
+app.include_router(sales.router,     prefix="/api/sales",     tags=["Sales"])
+app.include_router(inventory.router, prefix="/api/inventory", tags=["Inventory"])
+app.include_router(alerts.router,    prefix="/api/alerts",    tags=["Alerts"])
+app.include_router(market.router,    prefix="/api/market",    tags=["Market"])
+app.include_router(ai.router,        prefix="/api/ai",        tags=["AI"])
+
 
 @app.get("/health")
 def health_check():
+    return {"status": "ok", "service": "RuralDemand AI Backend"}
+
+
+@app.get("/api/health")
+def api_health_check():
     return {"status": "ok", "service": "RuralDemand AI Backend"}

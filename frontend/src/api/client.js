@@ -1,13 +1,15 @@
 /**
  * API client — wraps axios with auth header injection.
- * Base URL from VITE_API_BASE_URL env var. Production uses the same-origin
- * Vercel rewrite; local development uses the standalone API server.
+ * Set VITE_API_BASE_URL to the backend origin in production, for example
+ * https://gramforecast-backend.onrender.com. Local development uses the
+ * standalone API server.
  */
 import axios from "axios";
 
-const BASE_URL =
+const BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.PROD ? "/api" : "http://localhost:8000");
+  (import.meta.env.PROD ? "/api" : "http://localhost:8000")
+).replace(/\/$/, "");
 
 const api = axios.create({
   baseURL: BASE_URL,
