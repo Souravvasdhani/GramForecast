@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from database import engine, Base
-from routers import auth, dashboard, forecast, products, sales, inventory, alerts, market
+from routers import auth, dashboard, forecast, products, sales, inventory, alerts, market, ai
 
 
 @asynccontextmanager
@@ -45,6 +45,7 @@ app.include_router(sales.router,     prefix="/sales",     tags=["Sales"])
 app.include_router(inventory.router, prefix="/inventory", tags=["Inventory"])
 app.include_router(alerts.router,    prefix="/alerts",    tags=["Alerts"])
 app.include_router(market.router,    prefix="/market",    tags=["Market"])
+app.include_router(ai.router,        prefix="/ai",        tags=["AI"])
 
 
 @app.get("/health")

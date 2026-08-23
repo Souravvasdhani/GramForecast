@@ -16,7 +16,7 @@ import {
 // Auth guard
 function PrivateRoute({ children }) {
   const { isAuthenticated } = useAuth();
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+  return isAuthenticated ? children : <Navigate to="/login" replace />;x
 }
 
 function AppRoutes() {
