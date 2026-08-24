@@ -39,11 +39,14 @@ services:
       JWT_EXPIRE_MINUTES: 1440
       CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
       GROQ_API_KEY: ${GROQ_API_KEY}
+      ML_SERVICE_URL: http://ml-service:8001
     ports:
       - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
+      ml-service:
+        condition: service_started
     volumes:
       - ./backend:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload

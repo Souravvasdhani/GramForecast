@@ -8,6 +8,7 @@ from sqlalchemy import func
 import models
 from database import get_db
 from auth_utils import get_current_user
+from forecast_runner import ensure_forecasts
 
 router = APIRouter()
 
@@ -69,7 +70,11 @@ def get_planning(
     db: Session = Depends(get_db),
 ):
     """Inventory planning — recommended production/reorder per product."""
-    today  = date.today()
+    ensure_forecasts(db, current_user.business_id)
+    latest_sale = db.query(func.max(models.Sale.sale_date)).filter(
+        models.Sale.business_id == current_user.business_id
+    ).scalar()
+    today  = latest_sale + timedelta(days=1) if latest_sale else date.today()
     next_7 = today + timedelta(days=7)
     products = (
         db.query(models.Product)

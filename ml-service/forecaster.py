@@ -7,10 +7,10 @@ generates 7-day forward forecasts, and writes results back to the
 
 Features:
   - Facebook Prophet as primary model (handles seasonality, holidays)
-  - Indian festival calendar as custom holidays
+    Indian festival calendar as custom holidays
   - Falls back to Holt-Winters (statsmodels) if Prophet fails
   - Writes confidence intervals to DB
-  - Logs MAPE on held-out last-7-day window
+  - MAPE backtest on a held-out 7–14 day window → accuracy % (100 − MAPE)
 """
 
 import os
@@ -20,6 +20,9 @@ from datetime import date, timedelta, datetime
 from typing import Optional
 
 import numpy as np
+# Compatibility shim: np.float_ was removed in NumPy 2.0; Prophet 1.1.x still uses it
+if not hasattr(np, "float_"):
+    np.float_ = np.float64
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_batch
@@ -33,6 +36,7 @@ DATABASE_URL = os.getenv(
 )
 
 FORECAST_HORIZON = 7  # days
+BACKTEST_DAYS    = 14
 MODEL_VERSION    = "prophet_v1"
 
 # ─── Indian festival holidays ─────────────────────────────────────────────────
@@ -41,21 +45,27 @@ INDIAN_HOLIDAYS = pd.DataFrame({
         "Diwali", "Diwali+1", "Navratri", "Navratri_End", "Dussehra",
         "Dhanteras", "Holi", "Holi+1", "Makar_Sankranti", "Eid_ul_Fitr",
         "Baisakhi", "Raksha_Bandhan", "Chhath_Puja",
+        "Diwali_2025", "Holi_2026", "Raksha_Bandhan_2026", "Independence_Day_2026",
     ],
     "ds": pd.to_datetime([
         "2024-11-01", "2024-11-02", "2024-10-03", "2024-10-12", "2024-10-12",
         "2024-10-29", "2024-03-25", "2024-03-26", "2024-01-15", "2024-04-10",
         "2024-04-13", "2024-08-19", "2024-11-07",
+        "2025-10-20", "2026-03-03", "2026-08-08", "2026-08-15",
     ]),
-    "lower_window": [0, 0, -2, 0, 0, 0, -1, 0, 0, 0, 0, 0, -1],
-    "upper_window": [1, 1,  9, 0, 1, 1,  1, 1, 1, 2, 1, 1,  1],
+    "lower_window": [0, 0, -2, 0, 0, 0, -1, 0, 0, 0, 0, 0, -1, 0, -1, 0, 0],
+    "upper_window": [1, 1,  9, 0, 1, 1,  1, 1, 1, 2, 1, 1,  1, 1,  1, 1, 0],
 })
+
+
+def _connect():
+    return psycopg2.connect(DATABASE_URL)
 
 
 # ─── Data loading ─────────────────────────────────────────────────────────────
 
 def load_sales(conn, product_id: str) -> pd.DataFrame:
-    """Load daily aggregated sales for a product."""
+    """Load daily aggregated sales for a product, filling calendar gaps."""
     sql = """
         SELECT sale_date AS ds, SUM(quantity) AS y
         FROM sales
@@ -64,9 +74,20 @@ def load_sales(conn, product_id: str) -> pd.DataFrame:
         ORDER BY sale_date
     """
     df = pd.read_sql_query(sql, conn, params=(product_id,))
+    if df.empty:
+        return df
     df["ds"] = pd.to_datetime(df["ds"])
     df["y"]  = df["y"].astype(float)
-    return df
+    daily = (
+        df.set_index("ds")["y"]
+        .asfreq("D")
+        .interpolate(method="linear", limit=3)
+        .fillna(0.0)
+        .clip(lower=0)
+        .reset_index()
+    )
+    daily.columns = ["ds", "y"]
+    return daily
 
 
 # ─── Prophet model ────────────────────────────────────────────────────────────
@@ -74,30 +95,40 @@ def load_sales(conn, product_id: str) -> pd.DataFrame:
 def fit_prophet(df: pd.DataFrame) -> Optional[object]:
     try:
         from prophet import Prophet
+        span_days = int((df["ds"].max() - df["ds"].min()).days) if len(df) else 0
         model = Prophet(
-            yearly_seasonality=True,
+            yearly_seasonality=span_days >= 365,
             weekly_seasonality=True,
             daily_seasonality=False,
             holidays=INDIAN_HOLIDAYS,
-            seasonality_mode="multiplicative",
+            seasonality_mode="additive",
             interval_width=0.80,
             changepoint_prior_scale=0.05,
+            uncertainty_samples=100,
         )
-        model.fit(df)
+        fit_kwargs = {}
+        if len(df) < 150:
+            fit_kwargs["algorithm"] = "Newton"
+        model.fit(df, **fit_kwargs)
         return model
     except Exception as e:
         logger.warning(f"Prophet failed: {e}")
         return None
 
 
-def predict_prophet(model, horizon: int):
-    future = model.make_future_dataframe(periods=horizon, freq="D")
+def predict_prophet(model, last_ds, horizon: int) -> pd.DataFrame:
+    """Predict `horizon` days starting the day after last_ds (not a tail of history)."""
+    start = pd.Timestamp(last_ds) + pd.Timedelta(days=1)
+    future = pd.DataFrame({"ds": pd.date_range(start, periods=horizon, freq="D")})
     forecast = model.predict(future)
-    tail = forecast.tail(horizon)[["ds", "yhat", "yhat_lower", "yhat_upper"]]
-    tail["yhat"]       = tail["yhat"].clip(lower=0)
-    tail["yhat_lower"] = tail["yhat_lower"].clip(lower=0)
-    tail["yhat_upper"] = tail["yhat_upper"].clip(lower=0)
-    return tail
+    out = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
+    out["yhat"]       = out["yhat"].clip(lower=0)
+    out["yhat_lower"] = out["yhat_lower"].clip(lower=0)
+    out["yhat_upper"] = out["yhat_upper"].clip(lower=0)
+    # Guard against inverted / missing intervals
+    out["yhat_lower"] = np.minimum(out["yhat_lower"], out["yhat"])
+    out["yhat_upper"] = np.maximum(out["yhat_upper"], out["yhat"])
+    return out
 
 
 # ─── Fallback: Holt-Winters ───────────────────────────────────────────────────
@@ -107,6 +138,8 @@ def fit_holtwinters(df: pd.DataFrame, horizon: int) -> pd.DataFrame:
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
     series = df.set_index("ds")["y"].asfreq("D", fill_value=0)
+    last_date = series.index[-1] if not series.empty else pd.Timestamp(date.today()) - pd.Timedelta(days=1)
+    future_dates = pd.date_range(last_date + pd.Timedelta(days=1), periods=horizon)
 
     try:
         model = ExponentialSmoothing(
@@ -118,54 +151,85 @@ def fit_holtwinters(df: pd.DataFrame, horizon: int) -> pd.DataFrame:
         fit   = model.fit(optimized=True, use_brute=False)
         preds = fit.forecast(horizon)
     except Exception:
-        # Ultra-fallback: simple moving average
         window = min(7, len(series))
-        avg    = float(series.iloc[-window:].mean())
-        preds  = pd.Series(
-            [avg] * horizon,
-            index=pd.date_range(series.index[-1] + timedelta(days=1), periods=horizon),
-        )
+        avg    = float(series.iloc[-window:].mean()) if window else 0.0
+        preds  = pd.Series([avg] * horizon, index=future_dates)
 
-    last_date = series.index[-1] if not series.empty else date.today() - timedelta(days=1)
-    future_dates = pd.date_range(last_date + timedelta(days=1), periods=horizon)
-
-    # Widen preds to match future dates length
     if len(preds) != horizon:
         avg = float(series.iloc[-7:].mean()) if len(series) >= 7 else float(series.mean() or 0)
         preds = pd.Series([avg] * horizon, index=future_dates)
 
-    result = pd.DataFrame({
+    values = np.asarray(preds, dtype=float).clip(0)
+    return pd.DataFrame({
         "ds":         future_dates,
-        "yhat":       preds.values.clip(0),
-        "yhat_lower": (preds.values * 0.8).clip(0),
-        "yhat_upper": (preds.values * 1.2).clip(0),
+        "yhat":       values,
+        "yhat_lower": (values * 0.8).clip(0),
+        "yhat_upper": (values * 1.2).clip(0),
     })
-    return result
 
 
 # ─── MAPE evaluation ──────────────────────────────────────────────────────────
 
 def compute_mape(actual: list, predicted: list) -> float:
-    pairs = [(a, p) for a, p in zip(actual, predicted) if a > 0]
+    pairs = [(float(a), float(p)) for a, p in zip(actual, predicted) if float(a) > 0]
     if not pairs:
-        return 0.0
+        return None
     mape = np.mean([abs(a - p) / a for a, p in pairs]) * 100
     return round(float(mape), 2)
 
 
+def mape_to_accuracy(mape: Optional[float]) -> float:
+    """Accuracy % derived from MAPE. Never a hardcoded constant."""
+    if mape is None:
+        return 0.0
+    return round(float(max(0.0, min(100.0, 100.0 - mape))), 1)
+
+
+def backtest_mape(df: pd.DataFrame) -> tuple[Optional[float], str]:
+    """
+    Train on history before the last 7–14 days, predict that window, compare to actuals.
+    Uses 14-day holdout when ≥ 28 daily points exist; otherwise 7 days.
+    """
+    holdout_n = BACKTEST_DAYS if len(df) >= 28 else 7
+    if len(df) <= holdout_n + 7:
+        holdout_n = min(7, max(0, len(df) - 7))
+    if holdout_n < 3:
+        return None, "insufficient_holdout"
+
+    train_df = df.iloc[:-holdout_n].copy()
+    holdout  = df.iloc[-holdout_n:].copy()
+    if len(train_df) < 7:
+        return None, "insufficient_train"
+
+    model_used = "holtwinters"
+    bt_model = fit_prophet(train_df)
+    if bt_model:
+        future = pd.DataFrame({"ds": pd.to_datetime(holdout["ds"])})
+        fc_eval = bt_model.predict(future)
+        predicted = fc_eval["yhat"].clip(lower=0).tolist()
+        model_used = "prophet"
+    else:
+        hw_eval = fit_holtwinters(train_df, holdout_n)
+        predicted = hw_eval["yhat"].tolist()
+
+    return compute_mape(holdout["y"].tolist(), predicted), model_used
+
+
 # ─── Write forecasts to DB ────────────────────────────────────────────────────
 
-def write_forecasts(conn, product_id: str, preds: pd.DataFrame):
+def write_forecasts(conn, product_id: str, preds: pd.DataFrame, accuracy: float = 0.0):
     rows = []
     for _, row in preds.iterrows():
+        ds = row["ds"]
+        forecast_date = ds.date() if hasattr(ds, "date") else ds
         rows.append((
             str(uuid.uuid4()),
             product_id,
-            row["ds"].date() if hasattr(row["ds"], "date") else row["ds"],
+            forecast_date,
             float(row["yhat"]),
             float(row["yhat_lower"]),
             float(row["yhat_upper"]),
-            85.0,   # fixed confidence for now; real = 100 - MAPE
+            float(accuracy),
             MODEL_VERSION,
             datetime.utcnow(),
         ))
@@ -195,10 +259,9 @@ def write_forecasts(conn, product_id: str, preds: pd.DataFrame):
 
 def run_forecasts_for_business(business_id: str):
     logger.info(f"Starting forecast run for business {business_id}")
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = _connect()
     cur  = conn.cursor()
 
-    # Fetch all active products for this business
     cur.execute(
         "SELECT id, name FROM products WHERE business_id = %s AND is_active = TRUE",
         (business_id,),
@@ -207,6 +270,8 @@ def run_forecasts_for_business(business_id: str):
     cur.close()
 
     results = {}
+    mape_weights = []  # (accuracy, 7d_total) for overall
+
     for pid, pname in products:
         logger.info(f"  Forecasting: {pname} ({pid})")
         df = load_sales(conn, str(pid))
@@ -216,55 +281,50 @@ def run_forecasts_for_business(business_id: str):
             results[pname] = {"status": "skipped", "reason": "insufficient_data"}
             continue
 
-        # Hold out last 7 days for MAPE evaluation
-        train_df  = df.iloc[:-7] if len(df) > 14 else df
-        holdout   = df.iloc[-7:] if len(df) > 7 else pd.DataFrame()
+        mape, bt_model = backtest_mape(df)
+        accuracy = mape_to_accuracy(mape)
 
-        # Try Prophet first
-        model = fit_prophet(train_df)
-        if model:
-            preds = predict_prophet(model, FORECAST_HORIZON)
+        model_used = "holtwinters"
+        full_model = fit_prophet(df)
+        if full_model:
+            preds = predict_prophet(full_model, df["ds"].max(), FORECAST_HORIZON)
             model_used = "prophet"
         else:
             logger.info(f"  Falling back to Holt-Winters for {pname}")
-            preds = fit_holtwinters(train_df, FORECAST_HORIZON)
+            preds = fit_holtwinters(df, FORECAST_HORIZON)
             model_used = "holtwinters"
 
-        # MAPE on holdout
-        mape = 0.0
-        if not holdout.empty:
-            # Get in-sample predictions for the holdout window
-            if model and model_used == "prophet":
-                future_eval = model.make_future_dataframe(periods=7, freq="D")
-                fc_eval     = model.predict(future_eval)
-                predicted_holdout = fc_eval.tail(7)["yhat"].clip(0).tolist()
-            else:
-                hw_eval = fit_holtwinters(train_df, 7)
-                predicted_holdout = hw_eval["yhat"].tolist()
-            mape = compute_mape(holdout["y"].tolist(), predicted_holdout)
-
-        # Update confidence based on MAPE
-        confidence = max(50, round(100 - mape, 1))
-        preds_final = preds.copy()
-
-        write_forecasts(conn, str(pid), preds_final)
-        logger.info(f"  ✓ {pname}: {model_used}, MAPE={mape}%, confidence={confidence}%")
+        total_7d = float(preds["yhat"].sum())
+        write_forecasts(conn, str(pid), preds, accuracy=accuracy)
+        logger.info(
+            f"  ✓ {pname}: {model_used}, backtest={bt_model}, "
+            f"MAPE={mape}%, accuracy={accuracy}%, 7d={total_7d:.1f}"
+        )
         results[pname] = {
-            "status":     "ok",
-            "model":      model_used,
-            "mape_pct":   mape,
-            "confidence": confidence,
-            "forecast_7d_total": float(preds_final["yhat"].sum()),
+            "status":            "ok",
+            "model":             model_used,
+            "mape_pct":          mape,
+            "accuracy_pct":      accuracy,
+            "confidence":        accuracy,  # alias used by seed printer
+            "forecast_7d_total": total_7d,
         }
+        if mape is not None:
+            mape_weights.append((accuracy, total_7d))
+
+    overall = 0.0
+    if mape_weights:
+        wsum = sum(w for _, w in mape_weights) or 1.0
+        overall = round(sum(a * w for a, w in mape_weights) / wsum, 1)
+    results["_overall"] = {"accuracy_pct": overall}
 
     conn.close()
-    logger.info(f"Forecast run complete for {business_id}")
+    logger.info(f"Forecast run complete for {business_id} (overall accuracy={overall}%)")
     return results
 
 
 def run_all_businesses():
     """Run forecasts for all businesses in the DB."""
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = _connect()
     cur  = conn.cursor()
     cur.execute("SELECT id, name FROM businesses WHERE is_active = TRUE")
     businesses = cur.fetchall()

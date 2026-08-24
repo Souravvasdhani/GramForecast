@@ -49,17 +49,17 @@ export const signup = (data) =>
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────
 export const fetchDashboardSummary = () =>
-  api.get("/dashboard/summary").then((r) => r.data);
+  api.get("/dashboard/summary", { timeout: 180000 }).then((r) => r.data);
 
 // ─── Forecast ──────────────────────────────────────────────────────────────
 export const fetchProductForecast = (productId) =>
-  api.get(`/forecast/${productId}`).then((r) => r.data);
+  api.get(`/forecast/${productId}`, { timeout: 180000 }).then((r) => r.data);
 
 export const fetchAllForecasts = () =>
-  api.get("/forecast/business/all").then((r) => r.data);
+  api.get("/forecast/business/all", { timeout: 180000 }).then((r) => r.data);
 
 export const triggerForecastRun = (businessId) =>
-  api.post(`/forecast/run/${businessId}`).then((r) => r.data);
+  api.post(`/forecast/run/${businessId}`, {}, { timeout: 180000 }).then((r) => r.data);
 
 // ─── Products ──────────────────────────────────────────────────────────────
 export const fetchProducts = () =>
@@ -77,7 +77,7 @@ export const fetchInventory = () =>
   api.get("/inventory/").then((r) => r.data);
 
 export const fetchInventoryPlanning = () =>
-  api.get("/inventory/planning").then((r) => r.data);
+  api.get("/inventory/planning", { timeout: 180000 }).then((r) => r.data);
 
 // ─── Alerts ────────────────────────────────────────────────────────────────
 export const fetchAlerts = () =>

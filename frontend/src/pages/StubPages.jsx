@@ -85,7 +85,7 @@ function SalesAnalytics() {
       title="Sales Analytics"
       description="Historical sales performance, category mix, and transaction trends"
     >
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <KpiCard
           icon={IndianRupee}
           label="Total Sales (7d)"
@@ -169,7 +169,7 @@ function SalesAnalytics() {
           <h3 className="font-semibold text-gray-800 text-sm">Recent Transactions</h3>
           <span className="text-xs text-gray-400">Last 30 days</span>
         </div>
-        <div className="overflow-auto">
+        <div className="overflow-x-auto w-full">
           <table className="data-table">
             <thead>
               <tr>
@@ -218,7 +218,7 @@ function InventoryPage() {
       title="Inventory Management"
       description="Current stock health, coverage, and replenishment status"
     >
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <KpiCard
           icon={Warehouse}
           label="Inventory Value"
@@ -261,7 +261,7 @@ function InventoryPage() {
           <h3 className="font-semibold text-gray-800 text-sm">Stock Overview</h3>
           <span className="text-xs text-gray-400">Coverage by product</span>
         </div>
-        <div className="overflow-auto">
+        <div className="overflow-x-auto w-full">
           <table className="data-table">
             <thead>
               <tr>
@@ -313,7 +313,7 @@ function PlanningPage() {
       title="Inventory Planning"
       description="Recommended production and reorder quantities for the next 7 days"
     >
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
         <KpiCard
           icon={ClipboardList}
           label="Recommended Production"
@@ -348,7 +348,7 @@ function PlanningPage() {
           <h3 className="font-semibold text-gray-800 text-sm">Production Plan</h3>
           <span className="text-xs text-gray-400">Based on 7-day demand + safety stock</span>
         </div>
-        <div className="overflow-auto">
+        <div className="overflow-x-auto w-full">
           <table className="data-table">
             <thead>
               <tr>
@@ -398,7 +398,7 @@ function MarketTrends() {
       title="Market Trends"
       description="External demand and supply signals impacting pricing and stocking"
     >
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <KpiCard
           icon={TrendingUp}
           label="Market Demand Index"
@@ -490,7 +490,7 @@ function ForecastReports() {
       title="Forecast Reports"
       description="Generated summaries for operations, planning, and executive review"
     >
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <KpiCard icon={BarChart3} label="Forecast Confidence" value="92.4%" iconBg="bg-purple-50" iconColor="text-purple-500" />
         <KpiCard icon={TrendingUp} label="7-Day Demand" value="1,240" unit="units" iconBg="bg-green-50" iconColor="text-brand-mid" />
         <KpiCard icon={ClipboardList} label="Generated Today" value="6" iconBg="bg-blue-50" iconColor="text-blue-500" />
@@ -536,7 +536,7 @@ function AlertsPage() {
       title="Alerts & Notifications"
       description="Operational issues, stock risks, and recommended follow-up actions"
     >
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <KpiCard icon={Bell} label="Open Alerts" value={loading ? "—" : String(openAlerts)} iconBg="bg-red-50" iconColor="text-danger" loading={loading} />
         <KpiCard icon={AlertTriangle} label="High Priority" value={loading ? "—" : String(highPriority)} iconBg="bg-amber-50" iconColor="text-warning" loading={loading} />
         <KpiCard icon={CheckCircle2} label="Resolved" value={loading ? "—" : String(items.length - openAlerts)} iconBg="bg-green-50" iconColor="text-brand-mid" loading={loading} />

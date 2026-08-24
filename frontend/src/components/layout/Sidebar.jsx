@@ -6,7 +6,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, TrendingUp, BarChart2, Package,
   ClipboardList, LineChart, FileText, Bell, Settings, HelpCircle,
-  Leaf,
+  Leaf, X
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -22,18 +22,29 @@ const NAV_ITEMS = [
   { to: "/help",            label: "Help & Support",      icon: HelpCircle },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }) {
   return (
-    <aside id="main-sidebar" className="sidebar select-none">
-      {/* ── Logo ── */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
-        <div className="w-9 h-9 rounded-xl bg-brand-mid flex items-center justify-center flex-shrink-0">
-          <Leaf className="w-5 h-5 text-white" />
+    <aside id="main-sidebar" className={`sidebar select-none transition-transform duration-300 ease-in-out ${isOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
+      {/* ── Logo & Close Button ── */}
+      <div className="flex items-center justify-between px-5 py-5 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-brand-mid flex items-center justify-center flex-shrink-0">
+            <Leaf className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <p className="text-white font-bold text-sm leading-tight">RuralDemand AI</p>
+            <p className="text-green-300/70 text-[10px] leading-tight">Smarter Forecasts.</p>
+          </div>
         </div>
-        <div>
-          <p className="text-white font-bold text-sm leading-tight">RuralDemand AI</p>
-          <p className="text-green-300/70 text-[10px] leading-tight">Smarter Forecasts.</p>
-        </div>
+        
+        {/* Mobile Close Button */}
+        <button 
+          onClick={onClose}
+          className="lg:hidden p-2 -mr-2 text-white/70 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+          aria-label="Close Sidebar"
+        >
+          <X className="w-5 h-5" />
+        </button>
       </div>
 
       {/* ── Nav Items ── */}
@@ -43,6 +54,7 @@ export default function Sidebar() {
             key={to}
             to={to}
             end={to === "/"}
+            onClick={onClose}
             className={({ isActive }) =>
               `sidebar-nav-item ${isActive ? "active" : ""}`
             }

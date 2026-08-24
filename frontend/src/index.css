@@ -125,20 +125,21 @@
       --sidebar-width: 0px;
     }
     .sidebar {
-      position: static;
-      width: 100%;
-      height: auto;
-      min-height: auto;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+      position: fixed;
+      width: 280px;
+      max-width: 85vw;
+      height: 100vh;
+      z-index: 50;
+      border-right: 1px solid rgba(255,255,255,0.08);
     }
     .sidebar-nav {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      display: flex;
+      flex-direction: column;
       gap: 0.25rem;
       padding: 0.5rem;
     }
     .sidebar-nav-item {
-      margin: 0;
+      margin: 0 0.5rem;
       justify-content: flex-start;
     }
     .topbar {
@@ -167,8 +168,11 @@
     .content-area {
       padding: calc(var(--topbar-height) + 1.25rem) 0.75rem 0.75rem;
     }
-    .sidebar-nav {
-      grid-template-columns: 1fr;
+    
+    /* Enlarge tap targets for mobile */
+    .btn-action, .btn-outline {
+      min-height: 44px;
+      padding: 0.5rem 1rem;
     }
   }
 

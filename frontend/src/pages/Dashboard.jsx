@@ -20,7 +20,8 @@ import StatusBadge from "../components/ui/StatusBadge";
 import DemandChart from "../components/charts/DemandChart";
 import ForecastBar from "../components/charts/ForecastBar";
 import DonutChart  from "../components/charts/DonutChart";
-import { fetchDashboardSummary } from "../api/client";
+import { fetchDashboardSummary, triggerForecastRun } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const fmt = (n, opts = {}) =>
@@ -43,6 +44,7 @@ const INV_LABELS  = ["Optimal", "Low Stock", "Out of Stock", "Overstock"];
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function Dashboard() {
+  const { user } = useAuth();
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
@@ -66,6 +68,18 @@ export default function Dashboard() {
   const handleRefresh = () => {
     setRefreshing(true);
     loadData();
+  };
+
+  const handleRunForecast = async () => {
+    if (!user?.business_id) return;
+    setRefreshing(true);
+    try {
+      await triggerForecastRun(user.business_id);
+      await loadData();
+    } catch (e) {
+      setError(e.response?.data?.detail || e.message || "Failed to run forecast.");
+      setRefreshing(false);
+    }
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -119,7 +133,7 @@ export default function Dashboard() {
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* ZONE 1 — KPI Cards                                               */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <div id="dashboard-kpi-cards" className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+      <div id="dashboard-kpi-cards" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <KpiCard
           icon={TrendingUp}
           label="Predicted Demand (7d)"
@@ -198,7 +212,7 @@ export default function Dashboard() {
               ))}
             </div>
           ) : (
-            <div className="flex-1 overflow-auto -mx-1">
+            <div className="flex-1 overflow-x-auto w-full -mx-1">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -267,7 +281,12 @@ export default function Dashboard() {
           ) : (
             <div className="h-40 flex items-center justify-center text-gray-400 text-xs text-center">
               No forecast data yet.<br />
-              <span className="text-brand-mid cursor-pointer underline">Run forecast</span>
+              <span
+                className="text-brand-mid cursor-pointer underline"
+                onClick={handleRunForecast}
+              >
+                Run forecast
+              </span>
             </div>
           )}
         </div>

@@ -36,7 +36,7 @@ DATABASE_URL = os.getenv(
 )
 
 SEED_DAYS = 90  # days of historical data
-END_DATE = date.today() - timedelta(days=1)          # yesterday
+END_DATE = date.today()  # newest transaction date = today
 START_DATE = END_DATE - timedelta(days=SEED_DAYS - 1)
 
 random.seed(42)  # reproducible
@@ -213,7 +213,7 @@ def main():
     cur = conn.cursor()
 
     try:
-        print("🏢 Creating business...")
+        print("🏢 Creating business (idempotent)...")
         business_id = str(uuid.uuid4())
         cur.execute(
             """
@@ -236,8 +236,13 @@ def main():
                 "ramesh.yadav@example.com",
             ),
         )
+        # Always resolve to the actual business_id in the DB (in case it already existed)
+        cur.execute("SELECT id FROM businesses WHERE phone = %s", ("+919876543210",))
+        row = cur.fetchone()
+        if row:
+            business_id = str(row[0])
 
-        print("👤 Creating owner user...")
+        print("👤 Creating owner user (idempotent)...")
         user_id = str(uuid.uuid4())
         password_hash = bcrypt.hash("Demo@12345")
         cur.execute(
@@ -258,11 +263,10 @@ def main():
             ),
         )
 
-        print("📦 Creating products...")
+        print("📦 Creating products (idempotent)...")
         product_ids = {}
         for p in PRODUCTS:
             pid = str(uuid.uuid4())
-            product_ids[p["name"]] = pid
             target_stock = p["ideal_stock"] * 0.9
             reorder_point = p["safety_stock"] * 2
             cur.execute(
@@ -281,6 +285,18 @@ def main():
                     p["cost_price"], p["price"],
                 ),
             )
+            # Always resolve to the actual product_id in the DB
+            cur.execute(
+                "SELECT id FROM products WHERE business_id = %s AND name = %s",
+                (business_id, p["name"]),
+            )
+            prod_row = cur.fetchone()
+            if prod_row:
+                product_ids[p["name"]] = str(prod_row[0])
+
+        print(f"🗑️  Clearing old sales rows for this business (idempotent re-seed)...")
+        cur.execute("DELETE FROM sales WHERE business_id = %s", (business_id,))
+        print(f"   ✓ Old sales deleted")
 
         print(f"📊 Generating {SEED_DAYS} days of sales data ({START_DATE} → {END_DATE})...")
         sales_rows = []
@@ -289,7 +305,6 @@ def main():
             for p in PRODUCTS:
                 # Some products skip some days (sparse rural market reality)
                 if random.random() < 0.08:  # 8% chance of no sale on that day
-                    current_date_next = current_date
                     continue
                 qty = generate_daily_quantity(p, current_date)
                 price = generate_price(p["price"], current_date)
@@ -317,7 +332,7 @@ def main():
             sales_rows,
             page_size=500,
         )
-        print(f"   ✓ Inserted {len(sales_rows)} sale records")
+        print(f"   ✓ Inserted {len(sales_rows)} sale records (newest date = {END_DATE})")
 
         print("📸 Creating inventory snapshots (last 30 days)...")
         inv_rows = []
@@ -454,6 +469,69 @@ def main():
         print(f"   Password    : Demo@12345")
         print(f"   Products    : {len(PRODUCTS)}")
         print(f"   Sales rows  : {len(sales_rows)}")
+
+        print("\n🤖 Generating AI forecasts (Prophet)...")
+        try:
+            import subprocess
+            from pathlib import Path
+            repo = Path(__file__).resolve().parent.parent
+            ml_path = repo / "ml-service"
+            venv_py = repo / "backend" / ".venv" / "bin" / "python"
+
+            # Drop stale forecast rows so the next-7-day window cannot miss new dates
+            cur.execute(
+                """
+                DELETE FROM forecasts
+                WHERE product_id IN (SELECT id FROM products WHERE business_id = %s)
+                """,
+                (business_id,),
+            )
+            conn.commit()
+
+            fc_results = None
+            import sys as _sys
+            try:
+                if str(ml_path) not in _sys.path:
+                    _sys.path.insert(0, str(ml_path))
+                from forecaster import run_forecasts_for_business as _run_fc
+            except Exception as import_err:
+                print(f"   Direct import failed ({import_err}); trying backend venv…")
+                py = str(venv_py) if venv_py.exists() else _sys.executable
+                proc = subprocess.run(
+                    [py, str(ml_path / "forecaster.py"), "--business_id", business_id],
+                    cwd=str(ml_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                print(proc.stdout)
+                if proc.returncode != 0:
+                    raise RuntimeError(proc.stderr or proc.stdout or "forecaster.py failed")
+                fc_results = {"status": "ok"}
+            else:
+                fc_results = _run_fc(business_id)
+
+            if isinstance(fc_results, dict):
+                ok = sum(1 for k, v in fc_results.items() if k != "_overall" and isinstance(v, dict) and v.get("status") == "ok")
+                total = sum(1 for k in fc_results if k != "_overall")
+                print(f"   ✓ Forecasts generated for {ok}/{total or len(PRODUCTS)} products")
+                for pname, info in fc_results.items():
+                    if pname == "_overall" or not isinstance(info, dict):
+                        continue
+                    if info.get("status") == "ok":
+                        acc = info.get("accuracy_pct", info.get("confidence"))
+                        print(f"     {pname}: {info['forecast_7d_total']:.1f} units, accuracy={acc}%")
+                    else:
+                        print(f"     {pname}: {info}")
+                overall = (fc_results.get("_overall") or {}).get("accuracy_pct")
+                if overall is not None:
+                    print(f"   Overall MAPE-based accuracy: {overall}%")
+        except Exception as ml_err:
+            print(f"   ⚠️ Could not run forecast: {ml_err}")
+            print(
+                "   Run manually:\n"
+                "   backend/.venv/bin/python ml-service/forecaster.py"
+            )
 
     except Exception as e:
         conn.rollback()

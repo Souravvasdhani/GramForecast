@@ -1,11 +1,13 @@
 """
 ML Service FastAPI — exposes forecast trigger and status endpoints.
 The frontend/backend calls POST /forecast/run to trigger a forecast run.
+Runs synchronously so callers receive stored results, not a fire-and-forget job.
 """
 
-import os
 import logging
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from datetime import datetime
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -23,7 +25,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Track background job status
 _job_status: dict = {}
 
 
@@ -37,30 +38,25 @@ def health():
 
 
 @app.post("/forecast/run")
-def trigger_forecast(req: ForecastRunRequest, bg: BackgroundTasks):
-    """Trigger a background forecast run for a business."""
-    _job_status[req.business_id] = {"status": "running", "started_at": str(__import__("datetime").datetime.utcnow())}
-
-    def _run():
-        try:
-            results = run_forecasts_for_business(req.business_id)
-            _job_status[req.business_id] = {"status": "done", "results": results}
-        except Exception as e:
-            logger.error(f"Forecast run failed: {e}")
-            _job_status[req.business_id] = {"status": "error", "detail": str(e)}
-
-    bg.add_task(_run)
-    return {"message": "Forecast run started", "business_id": req.business_id}
+def trigger_forecast(req: ForecastRunRequest):
+    """Run forecasts for a business and wait until rows are written."""
+    _job_status[req.business_id] = {"status": "running", "started_at": str(datetime.utcnow())}
+    try:
+        results = run_forecasts_for_business(req.business_id)
+        _job_status[req.business_id] = {"status": "done", "results": results}
+        return {"message": "Forecast run complete", "business_id": req.business_id, "results": results}
+    except Exception as e:
+        logger.error(f"Forecast run failed: {e}")
+        _job_status[req.business_id] = {"status": "error", "detail": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/forecast/status/{business_id}")
 def forecast_status(business_id: str):
-    status = _job_status.get(business_id, {"status": "not_started"})
-    return status
+    return _job_status.get(business_id, {"status": "not_started"})
 
 
 @app.post("/forecast/run-all")
-def trigger_all_forecast(bg: BackgroundTasks):
-    """Trigger forecasts for all active businesses."""
-    bg.add_task(run_all_businesses)
-    return {"message": "Full forecast run started"}
+def trigger_all_forecast():
+    results = run_all_businesses()
+    return {"message": "Full forecast run complete", "results": results}

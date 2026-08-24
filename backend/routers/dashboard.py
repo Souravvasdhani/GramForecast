@@ -8,6 +8,7 @@ from sqlalchemy import func, cast, Date
 import models
 from database import get_db
 from auth_utils import get_current_user
+from forecast_runner import ensure_forecasts
 
 router = APIRouter()
 
@@ -18,7 +19,12 @@ def dashboard_summary(
     db: Session = Depends(get_db),
 ):
     business_id = current_user.business_id
-    today       = date.today()
+    ensure_forecasts(db, business_id)
+
+    # Determine 'today' dynamically based on latest sale date, falling back to actual today
+    latest_sale = db.query(func.max(models.Sale.sale_date)).filter(models.Sale.business_id == business_id).scalar()
+    today       = latest_sale + timedelta(days=1) if latest_sale else date.today()
+    
     week_ago    = today - timedelta(days=7)
     two_week_ago= today - timedelta(days=14)
     month_ago   = today - timedelta(days=30)

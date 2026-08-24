@@ -119,7 +119,7 @@ export default function DemandPrediction() {
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* ZONE 1 — KPI Cards (model-trust first, per DESIGN.md §5.3)      */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <KpiCard
           icon={Brain}
           label="Forecast Accuracy"
@@ -243,7 +243,7 @@ export default function DemandPrediction() {
         {/* Top Predicted Products — all products ranked */}
         <div className="content-card">
           <h3 className="font-semibold text-gray-800 text-sm mb-3">All Products — 7-Day Forecast Rank</h3>
-          <div className="overflow-auto">
+          <div className="overflow-x-auto w-full">
             <table className="data-table">
               <thead>
                 <tr>

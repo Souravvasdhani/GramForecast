@@ -18,7 +18,9 @@ def list_sales(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    since = date.today() - timedelta(days=days)
+    latest_sale = db.query(func.max(models.Sale.sale_date)).filter(models.Sale.business_id == current_user.business_id).scalar()
+    today = latest_sale + timedelta(days=1) if latest_sale else date.today()
+    since = today - timedelta(days=days)
     sales = (
         db.query(models.Sale)
         .join(models.Product)
@@ -51,7 +53,8 @@ def sales_analytics(
     db: Session = Depends(get_db),
 ):
     """Sales Analytics screen data."""
-    today        = date.today()
+    latest_sale = db.query(func.max(models.Sale.sale_date)).filter(models.Sale.business_id == current_user.business_id).scalar()
+    today = latest_sale + timedelta(days=1) if latest_sale else date.today()
     week_ago     = today - timedelta(days=7)
     two_week_ago = today - timedelta(days=14)
     month_ago    = today - timedelta(days=30)

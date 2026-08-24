@@ -2,11 +2,11 @@
  * Topbar — fixed header with page title, date range, notification bell, avatar.
  * DESIGN.md §3 — top bar specification.
  */
-import { Bell, ChevronDown, LogOut, Calendar } from "lucide-react";
+import { Bell, ChevronDown, LogOut, Calendar, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
-export default function Topbar({ title, description }) {
+export default function Topbar({ title, description, onMenuClick }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -21,6 +21,15 @@ export default function Topbar({ title, description }) {
 
   return (
     <header className="topbar">
+      {/* ── Mobile Menu Toggle ── */}
+      <button 
+        className="lg:hidden mr-3 p-2 -ml-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+        onClick={onMenuClick}
+        aria-label="Open Menu"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
       {/* ── Page Title ── */}
       <div className="flex-1 min-w-0">
         <h1 className="text-gray-900 font-bold text-lg leading-tight truncate">{title}</h1>
