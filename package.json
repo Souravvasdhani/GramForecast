@@ -2,5 +2,8 @@
   "private": true,
   "scripts": {
     "build": "npm --prefix frontend install && npm --prefix frontend run build"
+  },
+  "dependencies": {
+    "driver.js": "^1.8.0"
   }
 }

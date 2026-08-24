@@ -2,6 +2,7 @@
  * Operational screens for the remaining app modules.
  */
 import { useEffect, useState } from "react";
+import { useTutorial } from "../context/TutorialContext";
 import {
   AlertTriangle,
   ArrowRight,
@@ -616,6 +617,7 @@ function SettingsPage() {
 }
 
 function HelpPage() {
+  const { requestReplay } = useTutorial();
   const topics = [
     { title: "Forecasting basics", detail: "Learn how demand, seasonal spikes, and safety stock affect recommendations." },
     { title: "Inventory health", detail: "Understand optimal, low-stock, and out-of-stock categories before placing orders." },
@@ -636,6 +638,7 @@ function HelpPage() {
       <div className="content-card mt-4">
         <h3 className="font-semibold text-gray-800 text-sm mb-3">Need direct help?</h3>
         <div className="flex flex-wrap gap-3">
+          <button className="btn-action" onClick={requestReplay}>Replay Tutorial</button>
           <button className="btn-action">Call support</button>
           <button className="btn-outline">Email operations</button>
           <button className="btn-outline">View SOP guide</button>

@@ -3,6 +3,8 @@
  */
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { TutorialProvider } from "./context/TutorialContext";
+import Onboarding from "./components/onboarding/Onboarding";
 
 import Login           from "./pages/Login";
 import Signup          from "./pages/Signup";
@@ -42,9 +44,12 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <TutorialProvider>
+        <AuthProvider>
+          <AppRoutes />
+          <Onboarding />
+        </AuthProvider>
+      </TutorialProvider>
     </BrowserRouter>
   );
 }

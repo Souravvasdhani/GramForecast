@@ -209,3 +209,39 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 .page-enter { animation: fadeInUp 0.3s ease both; }
+
+.onboarding-modal-backdrop {
+  @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+  background: rgba(15, 61, 46, 0.55);
+}
+.onboarding-modal {
+  @apply relative w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl;
+}
+.onboarding-close {
+  @apply absolute right-3 top-2 text-2xl leading-none text-gray-400 hover:text-gray-700;
+}
+.welcome-video-placeholder {
+  @apply mb-5 flex h-52 flex-col items-center justify-center rounded-xl bg-green-50 text-sm text-gray-500;
+}
+.welcome-play-icon {
+  @apply mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-brand-mid text-xl text-white;
+}
+.onboarding-primary-button {
+  @apply mt-5 min-h-12 w-full rounded-xl bg-brand-mid px-5 py-3 text-base font-bold text-white hover:bg-brand-dark;
+}
+
+.driver-popover .driver-popover-btn {
+  min-height: 44px;
+  padding: 0.65rem 1rem;
+  font-size: 1rem;
+}
+.driver-skip-button {
+  min-height: 44px;
+  margin-right: auto;
+  border: 0;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 600;
+}

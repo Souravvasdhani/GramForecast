@@ -12,6 +12,7 @@ import {
   ArrowUpRight, ArrowDownRight, Minus, RefreshCw,
 } from "lucide-react";
 
+import { Link } from "react-router-dom";
 import AppShell    from "../components/layout/AppShell";
 import KpiCard     from "../components/ui/KpiCard";
 import AIBanner    from "../components/ui/AIBanner";
@@ -118,7 +119,7 @@ export default function Dashboard() {
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* ZONE 1 — KPI Cards                                               */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+      <div id="dashboard-kpi-cards" className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <KpiCard
           icon={TrendingUp}
           label="Predicted Demand (7d)"
@@ -304,12 +305,17 @@ export default function Dashboard() {
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* ZONE 4 — AI Recommendation banner                                */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <AIBanner
-        headline={aiRec.headline || "Run the forecasting model to get your first AI recommendation."}
-        detail={aiRec.detail}
-        priority={aiRec.priority || "low"}
-        loading={loading}
-      />
+      <div id="dashboard-ai-banner">
+        <AIBanner
+          headline={aiRec.headline || "Run the forecasting model to get your first AI recommendation."}
+          detail={aiRec.detail}
+          priority={aiRec.priority || "low"}
+          loading={loading}
+        />
+        <div className="mt-3 flex justify-end">
+          <Link id="restock-now-btn" to="/planning" className="btn-action">Restock Now <ArrowUpRight className="w-3.5 h-3.5" /></Link>
+        </div>
+      </div>
     </AppShell>
   );
 }

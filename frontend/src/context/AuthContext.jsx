@@ -3,6 +3,7 @@
  * Provides: user, token, login, logout, isAuthenticated
  */
 import { createContext, useContext, useState } from "react";
+import { useTutorial } from "./TutorialContext";
 import { login as apiLogin, signup as apiSignup } from "../api/client";
 
 const AuthContext = createContext(null);
@@ -50,6 +51,7 @@ const getStoredUser = () => {
 };
 
 export function AuthProvider({ children }) {
+  const { syncUser } = useTutorial();
   const [token, setToken] = useState(() => getStoredToken());
   const [user, setUser] = useState(() => getStoredUser());
 
@@ -66,6 +68,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem("user", JSON.stringify(data));
     setToken(nextToken);
     setUser(data);
+    syncUser(data);
     return data;
   };
 
@@ -83,6 +86,7 @@ export function AuthProvider({ children }) {
     clearAuthStorage();
     setToken(null);
     setUser(null);
+    syncUser(null);
   };
 
   return (
