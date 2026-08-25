@@ -24,12 +24,14 @@ import KpiCard from "../components/ui/KpiCard";
 import StatusBadge from "../components/ui/StatusBadge";
 import {
   fetchAlerts,
+  fetchAllForecasts,
   fetchInventory,
   fetchInventoryPlanning,
   fetchMarketTrends,
   fetchSales,
   fetchSalesAnalytics,
 } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 const money = (value) =>
   new Intl.NumberFormat("en-IN", {
@@ -60,6 +62,23 @@ const formatDate = (dateString) => {
 
 const safeArray = (value) => (Array.isArray(value) ? value : []);
 
+// Map DB payment_method values to kirana-friendly display labels + colours
+const PAYMENT_DISPLAY = {
+  cash:   { label: "Cash",    cls: "bg-green-100  text-green-700"  },
+  upi:    { label: "UPI",     cls: "bg-blue-100   text-blue-700"   },
+  credit: { label: "Udhaar",  cls: "bg-amber-100  text-amber-700"  },
+  barter: { label: "Barter",  cls: "bg-purple-100 text-purple-700" },
+  other:  { label: "Other",   cls: "bg-gray-100   text-gray-600"   },
+};
+function PaymentBadge({ method }) {
+  const cfg = PAYMENT_DISPLAY[method] ?? PAYMENT_DISPLAY.other;
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  );
+}
+
 function SalesAnalytics() {
   const [analytics, setAnalytics] = useState(null);
   const [transactions, setTransactions] = useState([]);
@@ -79,6 +98,15 @@ function SalesAnalytics() {
   const dailyTrend = safeArray(analytics?.daily_trend);
   const byCategory = safeArray(analytics?.by_category);
   const maxRevenue = Math.max(...dailyTrend.map((item) => Number(item.revenue || 0)), 1);
+
+  // Dynamic date-range label for the transactions header
+  const salesRangeLabel = (() => {
+    if (transactions.length === 0) return "Last 30 days";
+    const dates = transactions.map((r) => r.sale_date).filter(Boolean).sort();
+    const from = new Date(dates[0]).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+    const to   = new Date(dates[dates.length - 1]).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    return `${from} – ${to}`;
+  })();
 
   return (
     <AppShell
@@ -167,7 +195,7 @@ function SalesAnalytics() {
       <div className="content-card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-800 text-sm">Recent Transactions</h3>
-          <span className="text-xs text-gray-400">Last 30 days</span>
+          <span className="text-xs text-gray-400">{salesRangeLabel}</span>
         </div>
         <div className="overflow-x-auto w-full">
           <table className="data-table">
@@ -187,7 +215,7 @@ function SalesAnalytics() {
                   <td>{formatDate(row.sale_date)}</td>
                   <td className="numeric">{Number(row.quantity || 0).toFixed(0)}</td>
                   <td className="numeric font-semibold text-gray-800">{money(row.total_amount)}</td>
-                  <td><StatusBadge status={row.payment_method === "upi" ? "active" : "pending"} /></td>
+                  <td><PaymentBadge method={row.payment_method} /></td>
                 </tr>
               ))}
             </tbody>
@@ -479,10 +507,27 @@ function MarketTrends() {
 }
 
 function ForecastReports() {
+  const [fcData,   setFcData]   = useState(null);
+  const [loading,  setLoading]  = useState(true);
+
+  useEffect(() => {
+    fetchAllForecasts()
+      .then((d) => setFcData(d))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Derive KPIs from the same /forecast/business/all response that
+  // Demand Prediction uses — guarantees identical numbers across screens.
+  const products      = fcData?.products ?? [];
+  const overallAcc    = fcData?.overall_accuracy_pct ?? null;
+  const total7d       = products.reduce((s, p) => s + (p.total_7d ?? 0), 0);
+  const reportCount   = products.length;   // one report card per product
+
   const reportCards = [
-    { title: "7-Day Demand Summary", status: "Generated", tone: "optimal" },
-    { title: "Inventory Coverage Report", status: "Ready", tone: "medium" },
-    { title: "Sales Performance Snapshot", status: "Queued", tone: "low" },
+    { title: "7-Day Demand Summary",       status: "Generated", tone: "optimal" },
+    { title: "Inventory Coverage Report",  status: "Ready",     tone: "medium"  },
+    { title: "Sales Performance Snapshot", status: "Queued",    tone: "low"     },
   ];
 
   return (
@@ -491,10 +536,39 @@ function ForecastReports() {
       description="Generated summaries for operations, planning, and executive review"
     >
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-        <KpiCard icon={BarChart3} label="Forecast Confidence" value="92.4%" iconBg="bg-purple-50" iconColor="text-purple-500" />
-        <KpiCard icon={TrendingUp} label="7-Day Demand" value="1,240" unit="units" iconBg="bg-green-50" iconColor="text-brand-mid" />
-        <KpiCard icon={ClipboardList} label="Generated Today" value="6" iconBg="bg-blue-50" iconColor="text-blue-500" />
-        <KpiCard icon={CalendarRange} label="Next Run" value="Tomorrow" trendLabel="8:00 AM" iconBg="bg-amber-50" iconColor="text-warning" />
+        <KpiCard
+          icon={BarChart3}
+          label="Forecast Confidence"
+          value={loading ? "—" : overallAcc !== null ? `${overallAcc.toFixed(1)}%` : "—"}
+          iconBg="bg-purple-50"
+          iconColor="text-purple-500"
+          loading={loading}
+        />
+        <KpiCard
+          icon={TrendingUp}
+          label="7-Day Demand"
+          value={loading ? "—" : Math.round(total7d).toLocaleString("en-IN")}
+          unit="units"
+          iconBg="bg-green-50"
+          iconColor="text-brand-mid"
+          loading={loading}
+        />
+        <KpiCard
+          icon={ClipboardList}
+          label="Products Forecasted"
+          value={loading ? "—" : String(reportCount)}
+          iconBg="bg-blue-50"
+          iconColor="text-blue-500"
+          loading={loading}
+        />
+        <KpiCard
+          icon={CalendarRange}
+          label="Next Run"
+          value="Tomorrow"
+          trendLabel="8:00 AM"
+          iconBg="bg-amber-50"
+          iconColor="text-warning"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -528,8 +602,10 @@ function AlertsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const openAlerts = items.filter((item) => !item.resolved_at).length;
-  const highPriority = items.filter((item) => Number(item.priority) >= 2).length;
+  const openAlerts   = items.filter((item) => !item.resolved_at).length;
+  const highPriority = items.filter((item) => item.priority === "high").length;
+  // SLA Risk: derived from open high-priority alert count — not hardcoded
+  const slaRisk = highPriority >= 3 ? "High" : highPriority >= 1 ? "Medium" : "Low";
 
   return (
     <AppShell
@@ -540,7 +616,7 @@ function AlertsPage() {
         <KpiCard icon={Bell} label="Open Alerts" value={loading ? "—" : String(openAlerts)} iconBg="bg-red-50" iconColor="text-danger" loading={loading} />
         <KpiCard icon={AlertTriangle} label="High Priority" value={loading ? "—" : String(highPriority)} iconBg="bg-amber-50" iconColor="text-warning" loading={loading} />
         <KpiCard icon={CheckCircle2} label="Resolved" value={loading ? "—" : String(items.length - openAlerts)} iconBg="bg-green-50" iconColor="text-brand-mid" loading={loading} />
-        <KpiCard icon={ShieldCheck} label="SLA Risk" value={loading ? "—" : "Low"} iconBg="bg-blue-50" iconColor="text-blue-500" loading={loading} />
+        <KpiCard icon={ShieldCheck} label="Stock Risk" value={loading ? "—" : slaRisk} iconBg="bg-blue-50" iconColor="text-blue-500" loading={loading} />
       </div>
 
       <div className="content-card">
@@ -553,7 +629,7 @@ function AlertsPage() {
             <div key={item.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-gray-100 rounded-xl p-3 bg-gray-50/50">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <StatusBadge status={item.priority >= 2 ? "high" : "medium"} />
+                  <StatusBadge status={item.priority === "high" ? "high" : "medium"} />
                   <span className="text-xs font-semibold text-gray-700 uppercase">{item.type}</span>
                 </div>
                 <p className="text-sm text-gray-700">{item.message}</p>
@@ -571,6 +647,7 @@ function AlertsPage() {
 }
 
 function SettingsPage() {
+  const { user } = useAuth();
   return (
     <AppShell
       title="Settings"
@@ -582,15 +659,15 @@ function SettingsPage() {
           <div className="space-y-4">
             <div>
               <label className="text-xs text-gray-500 block mb-1">Business name</label>
-              <input defaultValue="Ramesh Kirana & Oil Mill" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              <input defaultValue={user?.business_name ?? ""} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">Contact number</label>
-              <input defaultValue="+91 98765 43210" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              <input defaultValue={user?.mobile ?? ""} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">Operating region</label>
-              <input defaultValue="Rampur, Uttar Pradesh" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              <input defaultValue={user?.location ?? ""} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
             </div>
           </div>
         </div>
@@ -617,7 +694,6 @@ function SettingsPage() {
 }
 
 function HelpPage() {
-  const { requestReplay } = useTutorial();
   const topics = [
     { title: "Forecasting basics", detail: "Learn how demand, seasonal spikes, and safety stock affect recommendations." },
     { title: "Inventory health", detail: "Understand optimal, low-stock, and out-of-stock categories before placing orders." },
@@ -638,10 +714,8 @@ function HelpPage() {
       <div className="content-card mt-4">
         <h3 className="font-semibold text-gray-800 text-sm mb-3">Need direct help?</h3>
         <div className="flex flex-wrap gap-3">
-          <button className="btn-action" onClick={requestReplay}>Replay Tutorial</button>
-          <button className="btn-action">Call support</button>
-          <button className="btn-outline">Email operations</button>
-          <button className="btn-outline">View SOP guide</button>
+          <a href="tel:+919876543210" className="btn-action">Call support</a>
+          <a href="mailto:support@gramforecast.in" className="btn-outline">Email support</a>
         </div>
       </div>
     </AppShell>

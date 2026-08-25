@@ -180,7 +180,7 @@ export default function DemandPrediction() {
             <DemandChart data={chartData} height={300} showLegend={true} />
           ) : (
             <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">
-              No forecast data. Run the forecasting model first.
+              Forecast not yet generated for this product.
             </div>
           )}
         </div>
@@ -235,7 +235,7 @@ export default function DemandPrediction() {
             <ForecastBar data={barData} height={200} />
           ) : (
             <div className="h-48 flex items-center justify-center text-gray-400 text-sm">
-              No forecast data yet.
+              Forecast not yet generated for this product.
             </div>
           )}
         </div>
@@ -285,7 +285,7 @@ export default function DemandPrediction() {
                   : (
                     <tr>
                       <td colSpan={4} className="text-center text-gray-400 text-xs py-6">
-                        No forecast data yet. Run the model first.
+                        No forecast data yet.
                       </td>
                     </tr>
                   )}

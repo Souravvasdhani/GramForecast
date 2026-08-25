@@ -34,6 +34,9 @@ class TokenResponse(BaseModel):
     user_id:      str
     business_id:  str
     name:         str
+    business_name: str = ""
+    mobile:       str = ""
+    location:     str = ""
 
 
 @router.post("/signup", response_model=TokenResponse)
@@ -73,6 +76,9 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
         user_id=str(user.id),
         business_id=str(business.id),
         name=user.name,
+        business_name=business.name,
+        mobile=user.mobile or "",
+        location=business.location or "",
     )
 
 
@@ -86,9 +92,14 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     db.commit()
 
     token = create_access_token({"sub": str(user.id), "bid": str(user.business_id)})
+    # Eager-load business for extra fields stored in the session
+    business = db.query(models.Business).filter(models.Business.id == user.business_id).first()
     return TokenResponse(
         access_token=token,
         user_id=str(user.id),
         business_id=str(user.business_id),
         name=user.name,
+        business_name=business.name if business else "",
+        mobile=user.mobile or "",
+        location=business.location if business else "",
     )

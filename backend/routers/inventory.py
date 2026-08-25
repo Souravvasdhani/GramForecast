@@ -25,12 +25,13 @@ def get_inventory(
     )
     items = []
     for p in products:
-        stock = float(p.current_stock or 0)
-        ideal = float(p.ideal_stock or 1)
+        stock  = float(p.current_stock or 0)
+        ideal  = float(p.ideal_stock or 1)
         safety = float(p.safety_stock or 0)
-        if stock == 0:
+        reorder = float(p.reorder_point or 0)
+        if stock <= 0:
             status = "out_of_stock"
-        elif safety and stock < safety:
+        elif reorder and stock < reorder:
             status = "low_stock"
         elif stock > ideal * 1.2:
             status = "overstock"
@@ -44,6 +45,7 @@ def get_inventory(
             "current_stock": stock,
             "ideal_stock":   ideal,
             "safety_stock":  safety,
+            "reorder_point": reorder,
             "target_stock":  float(p.target_stock or 0),
             "selling_price": float(p.selling_price or 0),
             "stock_value":   round(stock * float(p.selling_price or 0), 2),

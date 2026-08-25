@@ -115,7 +115,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h2 className="text-gray-700 text-sm font-medium">
-            Welcome back, <span className="text-brand-mid font-semibold">Ramesh</span> 👋
+            Welcome back, <span className="text-brand-mid font-semibold">{user?.name ?? "there"}</span> 👋
           </h2>
           <p className="text-gray-400 text-xs">Here's how your business is looking today.</p>
         </div>
@@ -139,7 +139,7 @@ export default function Dashboard() {
           label="Predicted Demand (7d)"
           value={loading ? "—" : `${fmt(kpis.predicted_demand_7d || 0, { maximumFractionDigits: 0 })}`}
           unit="units"
-          trendPct={loading ? undefined : 8.6}
+          trendPct={loading ? undefined : kpis.demand_delta_pct ?? undefined}
           iconBg="bg-blue-50"
           iconColor="text-blue-500"
           loading={loading}
@@ -165,7 +165,7 @@ export default function Dashboard() {
           icon={AlertTriangle}
           label="Stock-Out Risk"
           value={loading ? "—" : `${(kpis.out_of_stock_count || 0) + (kpis.low_stock_count || 0)}`}
-          unit="products"
+          unit={((kpis.out_of_stock_count || 0) + (kpis.low_stock_count || 0)) === 1 ? "product" : "products"}
           trendLabel="need attention"
           iconBg="bg-red-50"
           iconColor="text-danger"
@@ -182,7 +182,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-semibold text-gray-800 text-sm">Demand Prediction Overview</h3>
-              <p className="text-gray-400 text-xs">Actual sales vs AI forecast — last 14 days + next 7</p>
+              <p className="text-gray-400 text-xs">Actual sales vs AI forecast — last 14 days + next 7 days</p>
             </div>
             <div className="flex items-center gap-3 text-xs">
               <span className="flex items-center gap-1.5">
@@ -280,12 +280,12 @@ export default function Dashboard() {
             <ForecastBar data={forecastBar} height={160} />
           ) : (
             <div className="h-40 flex items-center justify-center text-gray-400 text-xs text-center">
-              No forecast data yet.<br />
+              Forecast not yet generated.{" "}
               <span
-                className="text-brand-mid cursor-pointer underline"
+                className="text-brand-mid cursor-pointer underline ml-1"
                 onClick={handleRunForecast}
               >
-                Run forecast
+                Generate now
               </span>
             </div>
           )}

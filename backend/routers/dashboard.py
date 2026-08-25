@@ -75,7 +75,7 @@ def dashboard_summary(
         db.query(func.count(models.Product.id))
         .filter(
             models.Product.business_id == business_id,
-            models.Product.current_stock == 0,
+            models.Product.current_stock <= 0,
         )
         .scalar() or 0
     )
@@ -84,7 +84,7 @@ def dashboard_summary(
         .filter(
             models.Product.business_id == business_id,
             models.Product.current_stock > 0,
-            models.Product.current_stock < models.Product.safety_stock,
+            models.Product.current_stock < models.Product.reorder_point,
         )
         .scalar() or 0
     )
@@ -197,10 +197,11 @@ def dashboard_summary(
             )
             .scalar() or 0
         )
-        # Determine stock status
-        if float(p.current_stock) == 0:
+        # Determine stock status — compare against reorder_point (not safety_stock)
+        reorder_pt = float(p.reorder_point or 0)
+        if float(p.current_stock) <= 0:
             stock_status = "out_of_stock"
-        elif p.safety_stock and float(p.current_stock) < float(p.safety_stock):
+        elif reorder_pt and float(p.current_stock) < reorder_pt:
             stock_status = "low_stock"
         elif p.ideal_stock and float(p.current_stock) > float(p.ideal_stock) * 1.2:
             stock_status = "overstock"
@@ -224,12 +225,12 @@ def dashboard_summary(
     all_products = db.query(models.Product).filter(models.Product.business_id == business_id).all()
     inv_counts = {"optimal": 0, "low_stock": 0, "out_of_stock": 0, "overstock": 0}
     for p in all_products:
-        s = float(p.current_stock or 0)
-        sf = float(p.safety_stock or 0)
+        s  = float(p.current_stock or 0)
+        rp = float(p.reorder_point or 0)
         ideal = float(p.ideal_stock or 1)
-        if s == 0:
+        if s <= 0:
             inv_counts["out_of_stock"] += 1
-        elif sf and s < sf:
+        elif rp and s < rp:
             inv_counts["low_stock"] += 1
         elif s > ideal * 1.2:
             inv_counts["overstock"] += 1

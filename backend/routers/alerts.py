@@ -22,7 +22,7 @@ def list_alerts(
     )
     if not resolved:
         query = query.filter(models.Alert.resolved_at.is_(None))
-    alerts = query.order_by(models.Alert.priority.desc(), models.Alert.created_at.desc()).limit(50).all()
+    alerts = query.order_by(models.Alert.created_at.desc()).limit(50).all()
     return [
         {
             "id":          str(a.id),
