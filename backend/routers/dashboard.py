@@ -1,5 +1,6 @@
 """Dashboard router — KPI summary + chart data for the home screen."""
 
+import logging
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from auth_utils import get_current_user
 from forecast_runner import ensure_forecasts
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/summary")
@@ -19,7 +21,10 @@ def dashboard_summary(
     db: Session = Depends(get_db),
 ):
     business_id = current_user.business_id
-    ensure_forecasts(db, business_id)
+    try:
+        ensure_forecasts(db, business_id)
+    except Exception:
+        logger.exception("Unable to refresh forecasts for dashboard: %s", business_id)
 
     # Determine 'today' dynamically based on latest sale date, falling back to actual today
     latest_sale = db.query(func.max(models.Sale.sale_date)).filter(models.Sale.business_id == business_id).scalar()
