@@ -267,7 +267,38 @@ def run_forecasts_for_business(business_id: str):
         (business_id,),
     )
     products = cur.fetchall()
+
+    # ── Business-level anchor date ────────────────────────────────────────────
+    # All products must share the same forecast window so that the API queries
+    # (which use MAX(sale_date) across the whole business) return a full set.
+    # A product whose last sale was a day earlier (e.g. due to an 8%-skip day)
+    # would otherwise start its forecast one day early and miss the last day of
+    # the query window.
+    cur.execute(
+        """
+        SELECT MAX(s.sale_date)
+        FROM sales s
+        JOIN products p ON s.product_id = p.id
+        WHERE p.business_id = %s
+        """,
+        (business_id,),
+    )
+    biz_max_sale = cur.fetchone()[0]
     cur.close()
+
+    if biz_max_sale is None:
+        logger.warning(f"No sales found for business {business_id}; aborting.")
+        conn.close()
+        return {"_overall": {"accuracy_pct": 0.0}}
+
+    # forecast_anchor is the last date we treat as "already known".
+    # predict_prophet will generate days [anchor+1 … anchor+HORIZON].
+    forecast_anchor = pd.Timestamp(biz_max_sale)
+    logger.info(
+        f"Business max sale date = {biz_max_sale}; "
+        f"forecasting {forecast_anchor + pd.Timedelta(days=1)} … "
+        f"{forecast_anchor + pd.Timedelta(days=FORECAST_HORIZON)}"
+    )
 
     results = {}
     mape_weights = []  # (accuracy, 7d_total) for overall
@@ -281,18 +312,44 @@ def run_forecasts_for_business(business_id: str):
             results[pname] = {"status": "skipped", "reason": "insufficient_data"}
             continue
 
+        # If a product's last sale is earlier than the business anchor (e.g. no
+        # sale that day), extend the training series up to the anchor with zeros
+        # so Prophet anchors at the same date as every other product.
+        if df["ds"].max() < forecast_anchor:
+            gap_dates = pd.date_range(
+                df["ds"].max() + pd.Timedelta(days=1),
+                forecast_anchor,
+                freq="D",
+            )
+            gap_df = pd.DataFrame({"ds": gap_dates, "y": 0.0})
+            df = pd.concat([df, gap_df], ignore_index=True)
+            logger.info(
+                f"  Extended {pname} training data by {len(gap_df)} day(s) "
+                f"to reach business anchor {biz_max_sale}"
+            )
+
         mape, bt_model = backtest_mape(df)
         accuracy = mape_to_accuracy(mape)
 
         model_used = "holtwinters"
         full_model = fit_prophet(df)
         if full_model:
-            preds = predict_prophet(full_model, df["ds"].max(), FORECAST_HORIZON)
+            # Always anchor on the business-level max sale date, not df["ds"].max(),
+            # so every product covers the identical 7-day window.
+            preds = predict_prophet(full_model, forecast_anchor, FORECAST_HORIZON)
             model_used = "prophet"
         else:
             logger.info(f"  Falling back to Holt-Winters for {pname}")
             preds = fit_holtwinters(df, FORECAST_HORIZON)
             model_used = "holtwinters"
+            # Re-anchor HW output to the business window as well
+            correct_dates = pd.date_range(
+                forecast_anchor + pd.Timedelta(days=1),
+                periods=FORECAST_HORIZON,
+                freq="D",
+            )
+            preds = preds.copy()
+            preds["ds"] = correct_dates
 
         total_7d = float(preds["yhat"].sum())
         write_forecasts(conn, str(pid), preds, accuracy=accuracy)

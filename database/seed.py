@@ -472,13 +472,19 @@ def main():
 
         print("\n🤖 Generating AI forecasts (Prophet)...")
         try:
-            import subprocess
+            import subprocess, json
             from pathlib import Path
-            repo = Path(__file__).resolve().parent.parent
+            repo    = Path(__file__).resolve().parent.parent
             ml_path = repo / "ml-service"
-            venv_py = repo / "backend" / ".venv" / "bin" / "python"
 
-            # Drop stale forecast rows so the next-7-day window cannot miss new dates
+            # Prefer the backend venv (has Prophet); fall back to the current
+            # interpreter (e.g. the database/ venv used by the Docker seeder).
+            venv_py = repo / "backend" / ".venv" / "bin" / "python"
+            import sys as _sys
+            py = str(venv_py) if venv_py.exists() else _sys.executable
+
+            # Drop ALL stale forecast rows for this business so the fresh run
+            # covers exactly the new next-7-day window with no leftover dates.
             cur.execute(
                 """
                 DELETE FROM forecasts
@@ -487,50 +493,58 @@ def main():
                 (business_id,),
             )
             conn.commit()
+            print(f"   ✓ Cleared old forecast rows for business {business_id}")
 
-            fc_results = None
-            import sys as _sys
-            try:
-                if str(ml_path) not in _sys.path:
-                    _sys.path.insert(0, str(ml_path))
-                from forecaster import run_forecasts_for_business as _run_fc
-            except Exception as import_err:
-                print(f"   Direct import failed ({import_err}); trying backend venv…")
-                py = str(venv_py) if venv_py.exists() else _sys.executable
-                proc = subprocess.run(
-                    [py, str(ml_path / "forecaster.py"), "--business_id", business_id],
-                    cwd=str(ml_path),
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                )
-                print(proc.stdout)
-                if proc.returncode != 0:
-                    raise RuntimeError(proc.stderr or proc.stdout or "forecaster.py failed")
-                fc_results = {"status": "ok"}
-            else:
-                fc_results = _run_fc(business_id)
+            # Always run forecaster.py as a fresh subprocess so there is no risk
+            # of importing a stale cached module when seed.py is itself imported.
+            proc = subprocess.run(
+                [py, str(ml_path / "forecaster.py"), "--business_id", business_id],
+                cwd=str(ml_path),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            # Print forecaster output so it's visible in the seed log
+            if proc.stdout:
+                for line in proc.stdout.strip().splitlines():
+                    print(f"   {line}")
+            if proc.returncode != 0:
+                err_detail = (proc.stderr or proc.stdout or "forecaster.py failed").strip()
+                raise RuntimeError(err_detail)
 
-            if isinstance(fc_results, dict):
-                ok = sum(1 for k, v in fc_results.items() if k != "_overall" and isinstance(v, dict) and v.get("status") == "ok")
-                total = sum(1 for k in fc_results if k != "_overall")
-                print(f"   ✓ Forecasts generated for {ok}/{total or len(PRODUCTS)} products")
-                for pname, info in fc_results.items():
-                    if pname == "_overall" or not isinstance(info, dict):
-                        continue
-                    if info.get("status") == "ok":
-                        acc = info.get("accuracy_pct", info.get("confidence"))
-                        print(f"     {pname}: {info['forecast_7d_total']:.1f} units, accuracy={acc}%")
-                    else:
-                        print(f"     {pname}: {info}")
-                overall = (fc_results.get("_overall") or {}).get("accuracy_pct")
-                if overall is not None:
-                    print(f"   Overall MAPE-based accuracy: {overall}%")
+            # Re-read results directly from DB to print a summary
+            cur.execute(
+                """
+                SELECT p.name,
+                       COUNT(f.id)                          AS days,
+                       SUM(f.predicted_demand)              AS total_7d,
+                       AVG(f.confidence_level)              AS avg_acc
+                FROM forecasts f
+                JOIN products p ON f.product_id = p.id
+                WHERE p.business_id = %s
+                GROUP BY p.name
+                ORDER BY total_7d DESC
+                """,
+                (business_id,),
+            )
+            rows = cur.fetchall()
+            print(f"   ✓ Forecasts stored for {len(rows)}/{len(PRODUCTS)} products:")
+            overall_num   = 0.0
+            overall_denom = 0.0
+            for pname, days, total, avg_acc in rows:
+                acc = float(avg_acc or 0)
+                tot = float(total or 0)
+                print(f"     {pname}: {days} days, {tot:.1f} units, accuracy={acc:.1f}%")
+                overall_num   += acc * tot
+                overall_denom += tot
+            if overall_denom:
+                print(f"   Overall MAPE-based accuracy: {overall_num / overall_denom:.1f}%")
+
         except Exception as ml_err:
-            print(f"   ⚠️ Could not run forecast: {ml_err}")
+            print(f"   ⚠️  Could not run forecast: {ml_err}")
             print(
                 "   Run manually:\n"
-                "   backend/.venv/bin/python ml-service/forecaster.py"
+                f"   {py} ml-service/forecaster.py --business_id {business_id}"
             )
 
     except Exception as e:
