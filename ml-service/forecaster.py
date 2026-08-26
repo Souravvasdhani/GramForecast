@@ -30,32 +30,52 @@ from psycopg2.extras import execute_batch
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://gramuser:grampassword@localhost:5432/gramforecast",
-)
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 FORECAST_HORIZON = 7  # days
 BACKTEST_DAYS    = 14
-MODEL_VERSION    = "prophet_v1"
+MODEL_VERSION    = "prophet_v2_festival"
 
-# ─── Indian festival holidays ─────────────────────────────────────────────────
-INDIAN_HOLIDAYS = pd.DataFrame({
-    "holiday": [
-        "Diwali", "Diwali+1", "Navratri", "Navratri_End", "Dussehra",
-        "Dhanteras", "Holi", "Holi+1", "Makar_Sankranti", "Eid_ul_Fitr",
-        "Baisakhi", "Raksha_Bandhan", "Chhath_Puja",
-        "Diwali_2025", "Holi_2026", "Raksha_Bandhan_2026", "Independence_Day_2026",
-    ],
-    "ds": pd.to_datetime([
-        "2024-11-01", "2024-11-02", "2024-10-03", "2024-10-12", "2024-10-12",
-        "2024-10-29", "2024-03-25", "2024-03-26", "2024-01-15", "2024-04-10",
-        "2024-04-13", "2024-08-19", "2024-11-07",
-        "2025-10-20", "2026-03-03", "2026-08-08", "2026-08-15",
-    ]),
-    "lower_window": [0, 0, -2, 0, 0, 0, -1, 0, 0, 0, 0, 0, -1, 0, -1, 0, 0],
-    "upper_window": [1, 1,  9, 0, 1, 1,  1, 1, 1, 2, 1, 1,  1, 1,  1, 1, 0],
-})
+# Hindu lunar dates are explicit for supported forecast years. Season windows
+# are modeled as holidays so Prophet's contribution remains explainable.
+FESTIVAL_DATES = {
+    2024: {"Diwali": "2024-11-01", "Holi": "2024-03-25", "Raksha Bandhan": "2024-08-19", "Eid": "2024-04-10", "Navratri": "2024-10-03", "Harvest": "2024-04-13", "Ganesh Chaturthi": "2024-09-07", "Gudi Padwa": "2024-04-09", "Makar Sankranti": "2024-01-15"},
+    2025: {"Diwali": "2025-10-20", "Holi": "2025-03-14", "Raksha Bandhan": "2025-08-09", "Eid": "2025-03-31", "Navratri": "2025-09-22", "Harvest": "2025-04-13", "Ganesh Chaturthi": "2025-08-27", "Gudi Padwa": "2025-03-30", "Makar Sankranti": "2025-01-14"},
+    2026: {"Diwali": "2026-11-08", "Holi": "2026-03-04", "Raksha Bandhan": "2026-08-28", "Eid": "2026-03-20", "Navratri": "2026-10-11", "Harvest": "2026-04-14", "Ganesh Chaturthi": "2026-09-14", "Gudi Padwa": "2026-03-19", "Makar Sankranti": "2026-01-14"},
+    2027: {"Diwali": "2027-10-29", "Holi": "2027-03-22", "Raksha Bandhan": "2027-08-17", "Eid": "2027-03-09", "Navratri": "2027-10-01", "Harvest": "2027-04-14", "Ganesh Chaturthi": "2027-09-04", "Gudi Padwa": "2027-04-07", "Makar Sankranti": "2027-01-14"},
+    2028: {"Diwali": "2028-10-17", "Holi": "2028-03-11", "Raksha Bandhan": "2028-08-06", "Eid": "2028-02-26", "Navratri": "2028-09-20", "Harvest": "2028-04-14", "Ganesh Chaturthi": "2028-08-25", "Gudi Padwa": "2028-03-27", "Makar Sankranti": "2028-01-15"},
+    2029: {"Diwali": "2029-11-05", "Holi": "2029-03-01", "Raksha Bandhan": "2029-08-24", "Eid": "2029-02-15", "Navratri": "2029-10-10", "Harvest": "2029-04-14", "Ganesh Chaturthi": "2029-09-12", "Gudi Padwa": "2029-04-06", "Makar Sankranti": "2029-01-14"},
+    2030: {"Diwali": "2030-10-26", "Holi": "2030-03-20", "Raksha Bandhan": "2030-08-13", "Eid": "2030-02-05", "Navratri": "2030-09-29", "Harvest": "2030-04-14", "Ganesh Chaturthi": "2030-09-02", "Gudi Padwa": "2030-03-28", "Makar Sankranti": "2030-01-15"},
+}
+
+CATEGORY_HOLIDAYS = {
+    "sweet": {"Diwali", "Holi", "Raksha Bandhan"},
+    "oil": {"Diwali", "Harvest", "Monsoon"},
+    "grain": {"Harvest", "Navratri"},
+    "pulse": {"Harvest", "Navratri", "Makar Sankranti", "Gudi Padwa"},
+    "vegetable": {"Ganesh Chaturthi", "Gudi Padwa", "Makar Sankranti"},
+}
+
+FESTIVAL_WINDOWS = {"Ganesh Chaturthi": (-21, 3), "Gudi Padwa": (-14, 2), "Makar Sankranti": (-7, 2), "Diwali": (-7, 2)}
+FESTIVAL_UPLIFT = {"Ganesh Chaturthi": 1.35, "Gudi Padwa": 1.25, "Makar Sankranti": 1.20, "Diwali": 1.30}
+
+
+def festival_calendar(category: Optional[str] = None, start_year: int = 2024, end_year: int = 2030) -> pd.DataFrame:
+    category_text = (category or "").lower()
+    selected = {name for key, names in CATEGORY_HOLIDAYS.items() if key in category_text for name in names}
+    rows = []
+    for year in range(start_year, end_year + 1):
+        for name, value in FESTIVAL_DATES[year].items():
+            if not selected or name in selected:
+                lower_window, upper_window = FESTIVAL_WINDOWS.get(name, (-1, 1))
+                rows.append({"holiday": name.replace(" ", "_"), "festival_name": name, "ds": value, "lower_window": lower_window, "upper_window": upper_window})
+        for name, value, length in (("Wedding Season", f"{year}-11-15", 90), ("Monsoon", f"{year}-06-15", 92)):
+            if not selected or name in selected:
+                rows.append({"holiday": name.replace(" ", "_"), "festival_name": name, "ds": value, "lower_window": 0, "upper_window": length})
+    return pd.DataFrame(rows)
+
+
+INDIAN_HOLIDAYS = festival_calendar()
 
 
 def _connect():
@@ -92,7 +112,7 @@ def load_sales(conn, product_id: str) -> pd.DataFrame:
 
 # ─── Prophet model ────────────────────────────────────────────────────────────
 
-def fit_prophet(df: pd.DataFrame) -> Optional[object]:
+def fit_prophet(df: pd.DataFrame, category: Optional[str] = None) -> Optional[object]:
     try:
         from prophet import Prophet
         span_days = int((df["ds"].max() - df["ds"].min()).days) if len(df) else 0
@@ -100,7 +120,7 @@ def fit_prophet(df: pd.DataFrame) -> Optional[object]:
             yearly_seasonality=span_days >= 365,
             weekly_seasonality=True,
             daily_seasonality=False,
-            holidays=INDIAN_HOLIDAYS,
+            holidays=festival_calendar(category),
             seasonality_mode="additive",
             interval_width=0.80,
             changepoint_prior_scale=0.05,
@@ -121,13 +141,25 @@ def predict_prophet(model, last_ds, horizon: int) -> pd.DataFrame:
     start = pd.Timestamp(last_ds) + pd.Timedelta(days=1)
     future = pd.DataFrame({"ds": pd.date_range(start, periods=horizon, freq="D")})
     forecast = model.predict(future)
+    train_holiday_names = getattr(model, "train_holiday_names", [])
+    if hasattr(train_holiday_names, "tolist"):
+        train_holiday_names = train_holiday_names.tolist()
+    holiday_names = set(train_holiday_names or [])
+    holiday_columns = [name for name in holiday_names if name in forecast.columns]
     out = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
+    out["festival_impact_qty"] = forecast[holiday_columns].sum(axis=1) if holiday_columns else 0.0
+    out["festival_name"] = ""
+    for _, holiday in model.holidays.iterrows():
+        mask = (out["ds"] >= pd.Timestamp(holiday["ds"]) + pd.Timedelta(days=int(holiday["lower_window"]))) & (out["ds"] <= pd.Timestamp(holiday["ds"]) + pd.Timedelta(days=int(holiday["upper_window"])))
+        out.loc[mask & (out["festival_name"] == ""), "festival_name"] = holiday["festival_name"]
     out["yhat"]       = out["yhat"].clip(lower=0)
     out["yhat_lower"] = out["yhat_lower"].clip(lower=0)
     out["yhat_upper"] = out["yhat_upper"].clip(lower=0)
     # Guard against inverted / missing intervals
     out["yhat_lower"] = np.minimum(out["yhat_lower"], out["yhat"])
     out["yhat_upper"] = np.maximum(out["yhat_upper"], out["yhat"])
+    baseline = (out["yhat"] - out["festival_impact_qty"]).clip(lower=0.01)
+    out["festival_impact_pct"] = (out["festival_impact_qty"] / baseline * 100).round(1).clip(lower=0)
     return out
 
 
@@ -168,6 +200,28 @@ def fit_holtwinters(df: pd.DataFrame, horizon: int) -> pd.DataFrame:
     })
 
 
+def apply_festival_uplift(preds: pd.DataFrame) -> pd.DataFrame:
+    """Apply explainable festival uplift when Prophet is unavailable."""
+    result = preds.copy()
+    result["festival_name"] = ""
+    result["festival_impact_pct"] = 0.0
+    for year, festivals in FESTIVAL_DATES.items():
+        for name, value in festivals.items():
+            if name not in FESTIVAL_UPLIFT:
+                continue
+            festival_date = pd.Timestamp(value)
+            lower, upper = FESTIVAL_WINDOWS[name]
+            mask = (result["ds"] >= festival_date + pd.Timedelta(days=lower)) & (result["ds"] <= festival_date + pd.Timedelta(days=upper))
+            if mask.any():
+                uplift = FESTIVAL_UPLIFT[name]
+                result.loc[mask, "yhat"] *= uplift
+                result.loc[mask, "yhat_lower"] *= uplift
+                result.loc[mask, "yhat_upper"] *= uplift
+                result.loc[mask, "festival_name"] = name
+                result.loc[mask, "festival_impact_pct"] = round((uplift - 1) * 100, 1)
+    return result
+
+
 # ─── MAPE evaluation ──────────────────────────────────────────────────────────
 
 def compute_mape(actual: list, predicted: list) -> float:
@@ -185,7 +239,7 @@ def mape_to_accuracy(mape: Optional[float]) -> float:
     return round(float(max(0.0, min(100.0, 100.0 - mape))), 1)
 
 
-def backtest_mape(df: pd.DataFrame) -> tuple[Optional[float], str]:
+def backtest_mape(df: pd.DataFrame, category: Optional[str] = None) -> tuple[Optional[float], str]:
     """
     Train on history before the last 7–14 days, predict that window, compare to actuals.
     Uses 14-day holdout when ≥ 28 daily points exist; otherwise 7 days.
@@ -202,7 +256,7 @@ def backtest_mape(df: pd.DataFrame) -> tuple[Optional[float], str]:
         return None, "insufficient_train"
 
     model_used = "holtwinters"
-    bt_model = fit_prophet(train_df)
+    bt_model = fit_prophet(train_df, category)
     if bt_model:
         future = pd.DataFrame({"ds": pd.to_datetime(holdout["ds"])})
         fc_eval = bt_model.predict(future)
@@ -213,6 +267,40 @@ def backtest_mape(df: pd.DataFrame) -> tuple[Optional[float], str]:
         predicted = hw_eval["yhat"].tolist()
 
     return compute_mape(holdout["y"].tolist(), predicted), model_used
+
+
+def backtest_series(df: pd.DataFrame, category: Optional[str] = None) -> dict:
+    """Return the held-out dates and predictions used by the MAPE backtest."""
+    holdout_n = BACKTEST_DAYS if len(df) >= 28 else 7
+    if len(df) <= holdout_n + 7:
+        holdout_n = min(7, max(0, len(df) - 7))
+    if holdout_n < 3:
+        return {"accuracy_pct": 0.0, "mape_pct": None, "model": "insufficient_data", "points": []}
+
+    train_df = df.iloc[:-holdout_n].copy()
+    holdout = df.iloc[-holdout_n:].copy()
+    if len(train_df) < 7:
+        return {"accuracy_pct": 0.0, "mape_pct": None, "model": "insufficient_data", "points": []}
+
+    model_used = "holtwinters"
+    model = fit_prophet(train_df, category)
+    if model:
+        predicted = model.predict(pd.DataFrame({"ds": pd.to_datetime(holdout["ds"])}))["yhat"].clip(lower=0).tolist()
+        model_used = "prophet"
+    else:
+        predicted = fit_holtwinters(train_df, holdout_n)["yhat"].tolist()
+
+    actual = holdout["y"].astype(float).tolist()
+    mape = compute_mape(actual, predicted)
+    return {
+        "accuracy_pct": mape_to_accuracy(mape),
+        "mape_pct": mape,
+        "model": model_used,
+        "points": [
+            {"date": str(ds.date()), "actual": round(float(real), 3), "predicted": round(float(pred), 3)}
+            for ds, real, pred in zip(holdout["ds"], actual, predicted)
+        ],
+    }
 
 
 # ─── Write forecasts to DB ────────────────────────────────────────────────────
@@ -230,6 +318,8 @@ def write_forecasts(conn, product_id: str, preds: pd.DataFrame, accuracy: float 
             float(row["yhat_lower"]),
             float(row["yhat_upper"]),
             float(accuracy),
+            row.get("festival_name") or None,
+            float(row.get("festival_impact_pct", 0.0)),
             MODEL_VERSION,
             datetime.utcnow(),
         ))
@@ -239,14 +329,17 @@ def write_forecasts(conn, product_id: str, preds: pd.DataFrame, accuracy: float 
         """
         INSERT INTO forecasts
           (id, product_id, forecast_date, predicted_demand,
-           lower_bound, upper_bound, confidence_level, model_version, run_at)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+              lower_bound, upper_bound, confidence_level, festival_name,
+              festival_impact_pct, model_version, run_at)
+          VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT (product_id, forecast_date, model_version)
         DO UPDATE SET
           predicted_demand = EXCLUDED.predicted_demand,
           lower_bound      = EXCLUDED.lower_bound,
           upper_bound      = EXCLUDED.upper_bound,
           confidence_level = EXCLUDED.confidence_level,
+          festival_name    = EXCLUDED.festival_name,
+          festival_impact_pct = EXCLUDED.festival_impact_pct,
           run_at           = EXCLUDED.run_at
         """,
         rows,
@@ -263,7 +356,7 @@ def run_forecasts_for_business(business_id: str):
     cur  = conn.cursor()
 
     cur.execute(
-        "SELECT id, name FROM products WHERE business_id = %s AND is_active = TRUE",
+        "SELECT id, name, category FROM products WHERE business_id = %s AND is_active = TRUE",
         (business_id,),
     )
     products = cur.fetchall()
@@ -303,7 +396,7 @@ def run_forecasts_for_business(business_id: str):
     results = {}
     mape_weights = []  # (accuracy, 7d_total) for overall
 
-    for pid, pname in products:
+    for pid, pname, category in products:
         logger.info(f"  Forecasting: {pname} ({pid})")
         df = load_sales(conn, str(pid))
 
@@ -328,11 +421,11 @@ def run_forecasts_for_business(business_id: str):
                 f"to reach business anchor {biz_max_sale}"
             )
 
-        mape, bt_model = backtest_mape(df)
+        mape, bt_model = backtest_mape(df, category)
         accuracy = mape_to_accuracy(mape)
 
         model_used = "holtwinters"
-        full_model = fit_prophet(df)
+        full_model = fit_prophet(df, category)
         if full_model:
             # Always anchor on the business-level max sale date, not df["ds"].max(),
             # so every product covers the identical 7-day window.
@@ -350,6 +443,7 @@ def run_forecasts_for_business(business_id: str):
             )
             preds = preds.copy()
             preds["ds"] = correct_dates
+            preds = apply_festival_uplift(preds)
 
         total_7d = float(preds["yhat"].sum())
         write_forecasts(conn, str(pid), preds, accuracy=accuracy)

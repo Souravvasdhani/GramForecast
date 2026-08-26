@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta
 from threading import Lock
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from groq import Groq
@@ -30,6 +30,7 @@ class InsightsRequest(BaseModel):
     current_forecast: Any
     inventory_status: Any
     sales_trend: Any
+    language: Literal["en", "hi", "mr"] = "en"
 
 
 class InsightsResponse(BaseModel):
@@ -71,11 +72,11 @@ def generate_insight(
         completion = client.chat.completions.create(
             model=settings.GROQ_MODEL,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": SYSTEM_PROMPT + (" Reply in simple Marathi (Devanagari)." if request.language == "mr" else " Reply in simple Hindi (Devanagari)." if request.language == "hi" else " Reply in English.")},
                 {"role": "user", "content": f"Business data:\n{context}"},
             ],
             temperature=0.2,
-            max_tokens=80,
+            max_tokens=200,
         )
         generated = completion.choices[0].message.content or ""
     except Exception as exc:

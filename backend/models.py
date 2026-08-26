@@ -5,7 +5,7 @@ from datetime import datetime, date
 
 from sqlalchemy import (
     Column, String, Boolean, Integer, Numeric, Date, DateTime,
-    Text, Enum, ForeignKey, UniqueConstraint, Index,
+    Text, Enum, ForeignKey, UniqueConstraint, Index, JSON,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -78,6 +78,10 @@ class ReportStatus(str, enum.Enum):
     pending   = "pending"
     failed    = "failed"
 
+class CreditStatus(str, enum.Enum):
+    unpaid = "unpaid"
+    paid   = "paid"
+
 
 # ─── Models ───────────────────────────────────────────────────────────────────
 
@@ -95,6 +99,7 @@ class Business(Base):
     phone          = Column(String(20))
     email          = Column(String(200))
     logo_url       = Column(String(500))
+    settings       = Column(JSON, default=dict)
     is_active      = Column(Boolean, default=True)
     created_at     = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at     = Column(DateTime(timezone=True), default=datetime.utcnow)
@@ -104,6 +109,7 @@ class Business(Base):
     sales    = relationship("Sale", back_populates="business")
     alerts   = relationship("Alert", back_populates="business")
     reports  = relationship("Report", back_populates="business")
+    credit_entries = relationship("CreditEntry", back_populates="business")
 
 
 class User(Base):
@@ -170,6 +176,22 @@ class Sale(Base):
     product  = relationship("Product", back_populates="sales")
 
 
+class CreditEntry(Base):
+    __tablename__ = "credit_entries"
+
+    id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    business_id   = Column(UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False)
+    customer_name = Column(String(200), nullable=False)
+    phone         = Column(String(20))
+    amount        = Column(Numeric(12, 2), nullable=False)
+    note          = Column(Text)
+    date          = Column(Date, nullable=False, default=date.today)
+    status        = Column(Enum(CreditStatus, name="credit_status"), nullable=False, default=CreditStatus.unpaid)
+    created_at    = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    business = relationship("Business", back_populates="credit_entries")
+
+
 class Forecast(Base):
     __tablename__ = "forecasts"
     __table_args__ = (UniqueConstraint("product_id", "forecast_date", "model_version"),)
@@ -181,6 +203,8 @@ class Forecast(Base):
     lower_bound      = Column(Numeric(12, 3))
     upper_bound      = Column(Numeric(12, 3))
     confidence_level = Column(Numeric(5, 2))
+    festival_name    = Column(String(100))
+    festival_impact_pct = Column(Numeric(7, 2), default=0)
     model_version    = Column(String(50), default="prophet_v1")
     run_at           = Column(DateTime(timezone=True), default=datetime.utcnow)
 

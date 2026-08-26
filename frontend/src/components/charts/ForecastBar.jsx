@@ -30,7 +30,7 @@ function CustomTooltip({ active, payload, label }) {
 export default function ForecastBar({ data = [], height = 200 }) {
   const enriched = data.map((d) => ({
     ...d,
-    error: d.upper && d.lower ? [d.predicted - d.lower, d.upper - d.predicted] : undefined,
+    error: d.upper != null && d.lower != null ? [d.predicted - d.lower, d.upper - d.predicted] : undefined,
   }));
 
   return (

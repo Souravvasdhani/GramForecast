@@ -4,6 +4,7 @@
  */
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { clsx } from "clsx";
+import { useLanguage } from "../../context/LanguageContext";
 
 export default function KpiCard({
   icon: Icon,
@@ -16,6 +17,7 @@ export default function KpiCard({
   iconColor = "text-brand-mid",
   loading = false,
 }) {
+  const { t } = useLanguage();
   if (loading) {
     return (
       <div className="kpi-card">
@@ -38,7 +40,7 @@ export default function KpiCard({
           <Icon className={clsx("w-5 h-5", iconColor)} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-gray-500 text-xs font-medium mb-1 truncate">{label}</p>
+          <p className="text-gray-500 text-xs font-medium mb-1 truncate">{t(label)}</p>
           <p className="text-gray-900 font-bold text-2xl leading-tight tabular-nums">
             {value}
             {unit && <span className="text-base font-semibold text-gray-500 ml-1">{unit}</span>}
@@ -55,7 +57,7 @@ export default function KpiCard({
               })}>
                 {trendUp ? "+" : trendDown ? "-" : ""}{trendAbs}%
               </span>
-              <span className="text-gray-400 text-xs">{trendLabel}</span>
+              <span className="text-gray-400 text-xs">{t(trendLabel)}</span>
             </div>
           )}
         </div>

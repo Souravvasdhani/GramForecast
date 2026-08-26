@@ -42,10 +42,7 @@ ML_PATH = REPO / "ml-service"
 if str(ML_PATH) not in sys.path:
     sys.path.insert(0, str(ML_PATH))
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://gramuser:grampassword@localhost:5432/gramforecast",
-)
+DATABASE_URL = os.environ["DATABASE_URL"]
 os.environ.setdefault("DATABASE_URL", DATABASE_URL)
 
 # ── NumPy 2.0 compat shim — must happen before Prophet is imported ─────────

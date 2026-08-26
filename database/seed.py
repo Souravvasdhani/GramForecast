@@ -2,9 +2,9 @@
 RuralDemand AI — Realistic Seed Data Generator
 ================================================
 Creates:
-  - 1 business: "Ramesh Kirana & Oil Mill" (Varanasi, UP)
+    - 1 business: "Sai Kirana Stores" (Nashik district, Maharashtra)
   - 1 owner user
-  - 6 products: Mustard Oil, Wheat Flour, Turmeric Powder, Gram Dal, Rice, Sugar
+    - 7 products including Maharashtra's volatile Onion (Kanda)
   - ~90 days of daily sales data with:
       * Realistic seasonal variation
       * Festival demand spikes (Diwali, Navratri, Holi)
@@ -30,10 +30,7 @@ from psycopg2.extras import execute_batch
 from passlib.hash import bcrypt
 
 # ─── Config ──────────────────────────────────────────────────────────────────
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://gramuser:grampassword@localhost:5432/gramforecast",
-)
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 SEED_DAYS = 90  # days of historical data
 END_DATE = date.today()  # newest transaction date = today
@@ -41,7 +38,7 @@ START_DATE = END_DATE - timedelta(days=SEED_DAYS - 1)
 
 random.seed(42)  # reproducible
 
-# ─── Indian festival calendar (approximate, within our 90-day window) ────────
+# ─── Maharashtra festival calendar (approximate, within our 90-day window) ───
 # We compute relative to today; the seeder adjusts if dates fall outside range.
 FESTIVALS_2024_25 = [
     # (month, day, name, demand_multiplier)
@@ -57,6 +54,8 @@ FESTIVALS_2024_25 = [
     (11, 15, "Chhath Puja",      1.35),
     (12, 25, "Christmas/Year End",1.10),
     ( 1, 14, "Makar Sankranti",  1.40),
+    ( 3, 30, "Gudi Padwa",       1.65),
+    ( 9,  7, "Ganesh Chaturthi", 2.40),  # Maharashtra's strongest local spike
     ( 1, 26, "Republic Day",     1.15),
     ( 2, 26, "Holi -1",          1.30),
     ( 2, 27, "Holi",             1.60),
@@ -67,6 +66,19 @@ FESTIVALS_2024_25 = [
 
 # ─── Product definitions ─────────────────────────────────────────────────────
 PRODUCTS = [
+    {
+        "name":          "Onion (Kanda)",
+        "category":      "Vegetables",
+        "unit":          "kg",
+        "base_demand":   38.0,
+        "price":         42.0,
+        "cost_price":    32.0,
+        "current_stock": 180.0,
+        "ideal_stock":   360.0,
+        "safety_stock":  70.0,
+        "high_months":   [8, 9, 10, 11],
+        "low_months":    [4, 5, 6],
+    },
     {
         "name":          "Mustard Oil",
         "category":      "Oils & Fats",
@@ -151,8 +163,8 @@ PRODUCTS = [
 PAYMENT_METHODS = ["cash", "upi", "cash", "cash", "upi", "credit"]  # weighted
 CUSTOMER_TYPES  = ["walk-in", "walk-in", "regular", "regular", "wholesale"]
 REGIONS         = [
-    "Rampur Village", "Seohara Market", "Chandpur Bazaar",
-    "Haldaur Town", "Nahtaur Block",
+    "Nashik District Village", "Pune District Village", "Lasalgaon Haat",
+    "Vashi APMC", "Dindori Bazaar",
 ]
 
 
@@ -225,12 +237,12 @@ def main():
             """,
             (
                 business_id,
-                "Ramesh Kirana & Oil Mill",
-                "Ramesh Yadav",
+                "Sai Kirana Stores",
+                "Ramesh Patil",
                 "kirana_store",
-                "Rampur Village, Seohara Block, Bijnor District, Uttar Pradesh",
-                28.9845,
-                78.5012,
+                "Dindori Village, Nashik District, Maharashtra",
+                20.0087,
+                73.7870,
                 2015,
                 "+919876543210",
                 "ramesh.yadav@example.com",
@@ -241,6 +253,11 @@ def main():
         row = cur.fetchone()
         if row:
             business_id = str(row[0])
+            cur.execute(
+                "UPDATE businesses SET name=%s, owner_name=%s, location=%s, latitude=%s, longitude=%s WHERE phone=%s",
+                ("Sai Kirana Stores", "Ramesh Patil", "Dindori Village, Nashik District, Maharashtra", 20.0087, 73.7870, "+919876543210"),
+            )
+        cur.execute("UPDATE businesses SET is_active = TRUE WHERE id = %s", (business_id,))
 
         print("👤 Creating owner user (idempotent)...")
         user_id = str(uuid.uuid4())
@@ -255,13 +272,15 @@ def main():
             (
                 user_id,
                 business_id,
-                "Ramesh Yadav",
+                "Ramesh Patil",
                 "owner",
                 "+919876543210",
-                "ramesh.yadav@example.com",
+                "ramesh.patil@example.com",
                 password_hash,
             ),
         )
+        cur.execute("UPDATE users SET is_active = TRUE WHERE mobile = %s", ("+919876543210",))
+        cur.execute("UPDATE users SET name=%s, email=%s, business_id=%s WHERE mobile=%s", ("Ramesh Patil", "ramesh.patil@example.com", business_id, "+919876543210"))
 
         print("📦 Creating products (idempotent)...")
         product_ids = {}
@@ -293,6 +312,7 @@ def main():
             prod_row = cur.fetchone()
             if prod_row:
                 product_ids[p["name"]] = str(prod_row[0])
+                cur.execute("UPDATE products SET is_active = TRUE WHERE id = %s", (prod_row[0],))
 
         print(f"🗑️  Clearing old sales rows for this business (idempotent re-seed)...")
         cur.execute("DELETE FROM sales WHERE business_id = %s", (business_id,))
@@ -385,14 +405,14 @@ def main():
                 price = round(base_price * random.gauss(1.0, 0.04), 2)
                 market_rows.append((
                     str(uuid.uuid4()),
-                    "Bijnor District, UP",
+                    "Maharashtra — Lasalgaon / Vashi APMC",
                     cat,
                     sig_date,
                     max(10, price),
                     max(0, min(100, demand_idx)),
                     max(0, min(100, supply_idx)),
                     random.choice(["low", "medium", "medium", "high"]),
-                    "mock",
+                    "Maharashtra APMC mock",
                     round(random.gauss(26, 5), 1),
                     round(max(0, random.gauss(3, 8)), 1),
                 ))
@@ -415,7 +435,8 @@ def main():
             (business_id, product_ids["Sugar"],         "out_of_stock",         "high",   "Sugar is out of stock! Restock immediately — Diwali season demand is high."),
             (business_id, product_ids["Gram Dal"],      "low_stock",             "high",   "Gram Dal stock (95 kg) is below safety level. Recommend ordering 300 kg."),
             (business_id, product_ids["Mustard Oil"],   "high_demand_forecast",  "medium", "Mustard Oil demand forecast +24% next week due to festival season."),
-            (business_id, product_ids["Turmeric Powder"],"price_increase",       "medium", "Wholesale Turmeric price up 8% this week in Bijnor mandi."),
+            (business_id, product_ids["Turmeric Powder"],"price_increase",       "medium", "Turmeric wholesale price up 8% this week at Vashi APMC."),
+            (business_id, product_ids["Onion (Kanda)"],   "price_increase",       "high",   "Onion price at Lasalgaon APMC down 18% — good time to stock."),
             (business_id, None,                         "weather_risk",          "low",    "Light rain forecast next 3 days — ensure dry storage for flour products."),
             (business_id, product_ids["Wheat Flour"],   "forecast_updated",      "low",    "AI demand model retrained with latest 90 days of sales data."),
         ]
@@ -473,6 +494,8 @@ def main():
         print("\n🤖 Generating AI forecasts (Prophet)...")
         try:
             import subprocess, json
+            from urllib.request import Request, urlopen
+            from urllib.error import URLError
             from pathlib import Path
             repo    = Path(__file__).resolve().parent.parent
             ml_path = repo / "ml-service"
@@ -495,15 +518,24 @@ def main():
             conn.commit()
             print(f"   ✓ Cleared old forecast rows for business {business_id}")
 
-            # Always run forecaster.py as a fresh subprocess so there is no risk
-            # of importing a stale cached module when seed.py is itself imported.
-            proc = subprocess.run(
-                [py, str(ml_path / "forecaster.py"), "--business_id", business_id],
-                cwd=str(ml_path),
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
+            if ml_path.exists():
+                # Always run forecaster.py as a fresh subprocess so there is no
+                # risk of importing a stale cached module.
+                proc = subprocess.run(
+                    [py, str(ml_path / "forecaster.py"), "--business_id", business_id],
+                    cwd=str(ml_path), capture_output=True, text=True, timeout=300,
+                )
+            else:
+                # In Docker, ml-service is a separate image and owns Prophet.
+                request = Request(
+                    os.getenv("ML_SERVICE_URL", "http://ml-service:8001") + "/forecast/run",
+                    data=json.dumps({"business_id": business_id}).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=300) as response:
+                    payload = json.load(response)
+                proc = subprocess.CompletedProcess([], 0, json.dumps(payload), "")
             # Print forecaster output so it's visible in the seed log
             if proc.stdout:
                 for line in proc.stdout.strip().splitlines():

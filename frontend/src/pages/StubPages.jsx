@@ -22,16 +22,22 @@ import {
 import AppShell from "../components/layout/AppShell";
 import KpiCard from "../components/ui/KpiCard";
 import StatusBadge from "../components/ui/StatusBadge";
+import AddSaleModal from "../components/sales/AddSaleModal";
+import ForecastTrustPanel from "../components/charts/ForecastTrustPanel";
 import {
   fetchAlerts,
   fetchAllForecasts,
+  fetchProductForecast,
   fetchInventory,
   fetchInventoryPlanning,
   fetchMarketTrends,
   fetchSales,
   fetchSalesAnalytics,
+  fetchSettings,
+  updateSettings,
 } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { useLanguage } from "../context/LanguageContext";
 
 const money = (value) =>
   new Intl.NumberFormat("en-IN", {
@@ -83,8 +89,10 @@ function SalesAnalytics() {
   const [analytics, setAnalytics] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSaleOpen, setIsSaleOpen] = useState(false);
 
-  useEffect(() => {
+  const refreshSales = () => {
+    setLoading(true);
     Promise.all([fetchSalesAnalytics(), fetchSales(30)])
       .then(([salesAnalytics, sales]) => {
         setAnalytics(salesAnalytics);
@@ -92,11 +100,16 @@ function SalesAnalytics() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { refreshSales(); }, []);
 
   const kpis = analytics?.kpis ?? {};
   const dailyTrend = safeArray(analytics?.daily_trend);
   const byCategory = safeArray(analytics?.by_category);
+  const profit = analytics?.profit ?? {};
+  const bestMargin = analytics?.best_margin;
+  const deadStock = safeArray(analytics?.dead_stock);
   const maxRevenue = Math.max(...dailyTrend.map((item) => Number(item.revenue || 0)), 1);
 
   // Dynamic date-range label for the transactions header
@@ -152,6 +165,76 @@ function SalesAnalytics() {
         />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+        <KpiCard
+          icon={IndianRupee}
+          label={t("Profit (7d)")}
+          value={loading ? "—" : money(profit.total_7d)}
+          trendLabel="revenue minus cost"
+          iconBg="bg-emerald-50"
+          iconColor="text-emerald-600"
+          loading={loading}
+        />
+        <KpiCard
+          icon={TrendingUp}
+          label={t("Profit (30d)")}
+          value={loading ? "—" : money(profit.total_30d)}
+          trendLabel={loading ? "" : `${profit.margin_pct_30d || 0}% margin`}
+          iconBg="bg-green-50"
+          iconColor="text-brand-mid"
+          loading={loading}
+        />
+        <KpiCard
+          icon={BarChart3}
+          label={t("Best-margin product")}
+          value={loading ? "—" : (bestMargin?.product_name || "—")}
+          trendLabel={bestMargin ? `${bestMargin.margin_pct}% margin` : "no sales yet"}
+          iconBg="bg-blue-50"
+          iconColor="text-blue-500"
+          loading={loading}
+        />
+        <KpiCard
+          icon={Warehouse}
+          label={t("Capital stuck in slow movers")}
+          value={loading ? "—" : money(analytics?.capital_stuck)}
+          trendLabel="at-cost stock value"
+          iconBg="bg-amber-50"
+          iconColor="text-warning"
+          loading={loading}
+        />
+      </div>
+
+      <div className="content-card mb-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-semibold text-gray-800 text-sm">{t("Dead stock / spoilage risk")}</h3>
+            <p className="text-gray-400 text-xs mt-1">{t("High stock value with the lowest recent sales velocity")}</p>
+          </div>
+          <AlertTriangle className="w-5 h-5 text-warning" />
+        </div>
+        {loading ? (
+          <div className="skeleton h-16 rounded-lg" />
+        ) : deadStock.length > 0 ? (
+          <div className="space-y-3">
+            {deadStock.map((item) => (
+              <div key={item.product_id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg bg-amber-50/70 px-3 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-800">{item.product_name}</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {t("Sales velocity")}: {Number(item.daily_velocity || 0).toFixed(1)} {item.unit || "units"}/day
+                    {" · "}{t("Stock value")}: {money(item.stock_value)}
+                    {item.days_since_last_sale !== null && ` · ${item.days_since_last_sale}d since last sale`}
+                  </div>
+                </div>
+                <span className="text-xs font-semibold text-amber-700">{t(item.suggestion)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">No dead-stock risk detected.</p>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-5">
         <div className="content-card xl:col-span-2">
           <h3 className="font-semibold text-gray-800 text-sm mb-4">Daily Revenue Trend</h3>
@@ -195,7 +278,10 @@ function SalesAnalytics() {
       <div className="content-card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-800 text-sm">Recent Transactions</h3>
-          <span className="text-xs text-gray-400">{salesRangeLabel}</span>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-xs text-gray-400 sm:inline">{salesRangeLabel}</span>
+            <button type="button" onClick={() => setIsSaleOpen(true)} className="btn-action">+ Add Sale / बिक्री जोड़ें</button>
+          </div>
         </div>
         <div className="overflow-x-auto w-full">
           <table className="data-table">
@@ -222,6 +308,7 @@ function SalesAnalytics() {
           </table>
         </div>
       </div>
+      <AddSaleModal isOpen={isSaleOpen} onClose={() => setIsSaleOpen(false)} onSuccess={refreshSales} />
     </AppShell>
   );
 }
@@ -507,15 +594,22 @@ function MarketTrends() {
 }
 
 function ForecastReports() {
+  const { language } = useLanguage();
   const [fcData,   setFcData]   = useState(null);
+  const [trustData, setTrustData] = useState(null);
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
     fetchAllForecasts()
-      .then((d) => setFcData(d))
+      .then((d) => {
+        setFcData(d);
+        const firstProduct = d.products?.[0];
+        if (firstProduct) return fetchProductForecast(firstProduct.product_id, language).then(setTrustData);
+        return null;
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [language]);
 
   // Derive KPIs from the same /forecast/business/all response that
   // Demand Prediction uses — guarantees identical numbers across screens.
@@ -571,6 +665,10 @@ function ForecastReports() {
         />
       </div>
 
+      <div className="mb-5">
+        <ForecastTrustPanel forecastData={trustData} loading={loading} compact />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {reportCards.map((report) => (
           <div key={report.title} className="content-card">
@@ -592,15 +690,16 @@ function ForecastReports() {
 }
 
 function AlertsPage() {
+  const { language, t } = useLanguage();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchAlerts()
+    fetchAlerts(language)
       .then((payload) => setItems(safeArray(payload)))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [language]);
 
   const openAlerts   = items.filter((item) => !item.resolved_at).length;
   const highPriority = items.filter((item) => item.priority === "high").length;
@@ -609,20 +708,20 @@ function AlertsPage() {
 
   return (
     <AppShell
-      title="Alerts & Notifications"
+      title={t("Alerts & Notifications")}
       description="Operational issues, stock risks, and recommended follow-up actions"
     >
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-        <KpiCard icon={Bell} label="Open Alerts" value={loading ? "—" : String(openAlerts)} iconBg="bg-red-50" iconColor="text-danger" loading={loading} />
-        <KpiCard icon={AlertTriangle} label="High Priority" value={loading ? "—" : String(highPriority)} iconBg="bg-amber-50" iconColor="text-warning" loading={loading} />
-        <KpiCard icon={CheckCircle2} label="Resolved" value={loading ? "—" : String(items.length - openAlerts)} iconBg="bg-green-50" iconColor="text-brand-mid" loading={loading} />
-        <KpiCard icon={ShieldCheck} label="Stock Risk" value={loading ? "—" : slaRisk} iconBg="bg-blue-50" iconColor="text-blue-500" loading={loading} />
+        <KpiCard icon={Bell} label={t("Open Alerts")} value={loading ? "—" : String(openAlerts)} iconBg="bg-red-50" iconColor="text-danger" loading={loading} />
+        <KpiCard icon={AlertTriangle} label={t("High Priority")} value={loading ? "—" : String(highPriority)} iconBg="bg-amber-50" iconColor="text-warning" loading={loading} />
+        <KpiCard icon={CheckCircle2} label={t("Resolved")} value={loading ? "—" : String(items.length - openAlerts)} iconBg="bg-green-50" iconColor="text-brand-mid" loading={loading} />
+        <KpiCard icon={ShieldCheck} label={t("Stock Risk")} value={loading ? "—" : slaRisk} iconBg="bg-blue-50" iconColor="text-blue-500" loading={loading} />
       </div>
 
       <div className="content-card">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-800 text-sm">Alert Feed</h3>
-          <button className="btn-outline">Mark all read</button>
+          <h3 className="font-semibold text-gray-800 text-sm">{t("Alert Feed")}</h3>
+          <button className="btn-outline">{t("Mark all read")}</button>
         </div>
         <div className="space-y-3">
           {items.map((item) => (
@@ -636,7 +735,7 @@ function AlertsPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-gray-400">{formatDate(item.created_at)}</span>
-                <button className="btn-action">Acknowledge</button>
+                <button className="btn-action">{t("Acknowledge")}</button>
               </div>
             </div>
           ))}
@@ -648,26 +747,57 @@ function AlertsPage() {
 
 function SettingsPage() {
   const { user } = useAuth();
+  const { t } = useLanguage();
+  const [form, setForm] = useState({ business_name: "", mobile: "", location: "", preferences: {} });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    fetchSettings()
+      .then((settings) => setForm(settings))
+      .catch(() => setToast({ type: "error", message: "Settings could not be loaded." }))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const updateField = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+  const updatePreference = (name) => setForm((current) => ({ ...current, preferences: { ...current.preferences, [name]: !current.preferences[name] } }));
+  const save = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setToast(null);
+    try {
+      const saved = await updateSettings(form);
+      setForm(saved);
+      setToast({ type: "success", message: "Settings saved successfully." });
+    } catch (requestError) {
+      setToast({ type: "error", message: requestError.response?.data?.detail || "Settings could not be saved." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <AppShell
       title="Settings"
       description="Store preferences, notifications, and forecasting automation"
     >
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      {toast && <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${toast.type === "success" ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`} role="status">{toast.message}</div>}
+      <form onSubmit={save} className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div className="content-card">
           <h3 className="font-semibold text-gray-800 text-sm mb-4">Business Profile</h3>
           <div className="space-y-4">
             <div>
               <label className="text-xs text-gray-500 block mb-1">Business name</label>
-              <input defaultValue={user?.business_name ?? ""} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              <input name="business_name" value={form.business_name || user?.business_name || ""} onChange={updateField} disabled={loading || saving} required className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">Contact number</label>
-              <input defaultValue={user?.mobile ?? ""} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              <input name="mobile" value={form.mobile || user?.mobile || ""} onChange={updateField} disabled={loading || saving} required inputMode="numeric" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">Operating region</label>
-              <input defaultValue={user?.location ?? ""} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              <input name="location" value={form.location || user?.location || ""} onChange={updateField} disabled={loading || saving} required className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
             </div>
           </div>
         </div>
@@ -675,20 +805,16 @@ function SettingsPage() {
         <div className="content-card">
           <h3 className="font-semibold text-gray-800 text-sm mb-4">Preferences</h3>
           <div className="space-y-3">
-            {[
-              "Daily AI forecast summary",
-              "Low-stock alert notifications",
-              "Weekly demand report emails",
-              "Auto-generated reorder suggestions",
-            ].map((item) => (
+            {[ ["daily_ai_forecast", "Daily AI forecast summary"], ["low_stock_alerts", "Low-stock alert notifications"], ["weekly_report_emails", "Weekly demand report emails"], ["auto_reorder_suggestions", "Auto-generated reorder suggestions"]].map(([name, item]) => (
               <label key={item} className="flex items-center justify-between gap-3 text-sm text-gray-700">
                 <span>{item}</span>
-                <input type="checkbox" defaultChecked className="h-4 w-4 accent-brand-mid" />
+                <input type="checkbox" checked={form.preferences[name] ?? true} onChange={() => updatePreference(name)} disabled={loading || saving} className="h-4 w-4 accent-brand-mid" />
               </label>
             ))}
           </div>
         </div>
-      </div>
+        <button type="submit" disabled={loading || saving} className="btn-action xl:col-span-2 justify-center disabled:opacity-60">{saving ? "Saving..." : "Save Settings"}</button>
+      </form>
     </AppShell>
   );
 }

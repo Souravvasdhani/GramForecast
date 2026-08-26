@@ -5,14 +5,16 @@
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, TrendingUp, BarChart2, Package,
-  ClipboardList, LineChart, FileText, Bell, Settings, HelpCircle,
+  ClipboardList, LineChart, FileText, Bell, Settings, HelpCircle, BookOpen,
   Leaf, X
 } from "lucide-react";
+import { useLanguage } from "../../context/LanguageContext";
 
 const NAV_ITEMS = [
   { to: "/",                label: "Dashboard",           icon: LayoutDashboard },
   { to: "/demand",          label: "Demand Prediction",   icon: TrendingUp },
   { to: "/sales",           label: "Sales Analytics",     icon: BarChart2 },
+  { to: "/credit",          label: "Udhaar / Khata",      icon: BookOpen },
   { to: "/inventory",       label: "Inventory",           icon: Package },
   { to: "/planning",        label: "Inventory Planning",  icon: ClipboardList },
   { to: "/market",          label: "Market Trends",       icon: LineChart },
@@ -23,6 +25,7 @@ const NAV_ITEMS = [
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
+  const { t } = useLanguage();
   return (
     <aside id="main-sidebar" className={`sidebar select-none transition-transform duration-300 ease-in-out ${isOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
       {/* ── Logo & Close Button ── */}
@@ -33,7 +36,7 @@ export default function Sidebar({ isOpen, onClose }) {
           </div>
           <div>
             <p className="text-white font-bold text-sm leading-tight">RuralDemand AI</p>
-            <p className="text-green-300/70 text-[10px] leading-tight">Smarter Forecasts.</p>
+            <p className="text-green-300/70 text-[10px] leading-tight">{t("Smarter Forecasts.")}</p>
           </div>
         </div>
         
@@ -60,7 +63,7 @@ export default function Sidebar({ isOpen, onClose }) {
             }
           >
             <Icon className="sidebar-icon" />
-            <span>{label}</span>
+            <span>{t(label)}</span>
           </NavLink>
         ))}
       </nav>
@@ -69,7 +72,7 @@ export default function Sidebar({ isOpen, onClose }) {
       <div className="m-3 rounded-xl bg-white/10 p-4 border border-white/10">
         <div className="flex items-center gap-2 mb-1.5">
           <TrendingUp className="w-4 h-4 text-green-300" />
-          <span className="text-green-200 text-xs font-semibold">Did you know?</span>
+          <span className="text-green-200 text-xs font-semibold">{t("Did you know?")}</span>
         </div>
         <p className="text-green-100/70 text-xs leading-relaxed">
           Businesses using AI forecasting reduce stockouts by up to 30% in the first season.

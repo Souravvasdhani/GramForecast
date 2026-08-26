@@ -3,7 +3,8 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, field_validator
+import re
 import uuid
 
 from database import get_db
@@ -21,6 +22,37 @@ class SignupRequest(BaseModel):
     password:          str
     business_category: str = "kirana_store"
     location:          str = ""
+
+    @field_validator("business_name", "owner_name", "business_category", "location")
+    @classmethod
+    def required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field is required")
+        return value
+
+    @field_validator("mobile")
+    @classmethod
+    def valid_mobile(cls, value: str) -> str:
+        value = value.strip()
+        if not re.fullmatch(r"[6-9]\d{9}", value):
+            raise ValueError("Mobile must be exactly 10 digits and start with 6-9")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, value: str) -> str:
+        value = value.strip()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
+            raise ValueError("Enter a valid email address")
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def valid_password(cls, value: str) -> str:
+        if len(value) < 8 or not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
+            raise ValueError("Password must be at least 8 characters with at least 1 letter and 1 number")
+        return value
 
 
 class LoginRequest(BaseModel):

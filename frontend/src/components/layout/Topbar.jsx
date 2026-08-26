@@ -5,12 +5,14 @@
 import { Bell, ChevronDown, LogOut, Calendar, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { useLanguage } from "../../context/LanguageContext";
 
 export default function Topbar({ title, description, onMenuClick }) {
   const { user, logout } = useAuth();
+  const { language, setLanguage, t } = useLanguage();
   const navigate = useNavigate();
 
-  const today = new Date().toLocaleDateString("en-IN", {
+  const today = new Date().toLocaleDateString(language === "mr" ? "mr-IN" : language === "hi" ? "hi-IN" : "en-IN", {
     weekday: "short", day: "numeric", month: "short", year: "numeric",
   });
 
@@ -34,12 +36,15 @@ export default function Topbar({ title, description, onMenuClick }) {
       <div className="flex-1 min-w-0">
         <h1 className="text-gray-900 font-bold text-lg leading-tight truncate">{title}</h1>
         {description && (
-          <p className="text-gray-400 text-xs truncate">{description}</p>
+          <p className="text-gray-400 text-xs truncate">{t(description)}</p>
         )}
       </div>
 
       {/* ── Right Controls ── */}
       <div className="flex items-center gap-4 ml-4">
+        <button type="button" onClick={() => setLanguage((current) => current === "en" ? "hi" : current === "hi" ? "mr" : "en")} className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100" aria-label="Toggle language">
+          {language === "en" ? "हिंदी" : language === "hi" ? "मराठी" : "EN"}
+        </button>
         {/* Date */}
         <div className="hidden sm:flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
           <Calendar className="w-3.5 h-3.5" />
@@ -76,7 +81,7 @@ export default function Topbar({ title, description, onMenuClick }) {
           aria-label="Logout"
         >
           <LogOut className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Logout</span>
+          <span className="hidden sm:inline">{t("Logout")}</span>
         </button>
       </div>
     </header>

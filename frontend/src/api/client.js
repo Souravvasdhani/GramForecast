@@ -48,12 +48,15 @@ export const signup = (data) =>
   api.post("/auth/signup", data).then((r) => r.data);
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────
-export const fetchDashboardSummary = () =>
-  api.get("/dashboard/summary", { timeout: 180000 }).then((r) => r.data);
+export const fetchDashboardSummary = (language = "en") =>
+  api.get(`/dashboard/summary?language=${language}`, { timeout: 180000 }).then((r) => r.data);
+
+export const sendAssistantMessage = (message, language = "en") =>
+  api.post("/assistant/chat", { message, language }, { timeout: 30000 }).then((r) => r.data);
 
 // ─── Forecast ──────────────────────────────────────────────────────────────
-export const fetchProductForecast = (productId) =>
-  api.get(`/forecast/${productId}`, { timeout: 180000 }).then((r) => r.data);
+export const fetchProductForecast = (productId, language = "en") =>
+  api.get(`/forecast/${productId}?language=${language}`, { timeout: 180000 }).then((r) => r.data);
 
 export const fetchAllForecasts = () =>
   api.get("/forecast/business/all", { timeout: 180000 }).then((r) => r.data);
@@ -65,12 +68,25 @@ export const triggerForecastRun = (businessId) =>
 export const fetchProducts = () =>
   api.get("/products/").then((r) => r.data);
 
+export const createSale = (sale) =>
+  api.post("/sales", sale).then((r) => r.data);
+
 // ─── Sales ─────────────────────────────────────────────────────────────────
 export const fetchSales = (days = 30) =>
   api.get(`/sales/?days=${days}`).then((r) => r.data);
 
 export const fetchSalesAnalytics = () =>
   api.get("/sales/analytics").then((r) => r.data);
+
+// ─── Udhaar / Credit ──────────────────────────────────────────────────────
+export const fetchCreditEntries = () =>
+  api.get("/credit/").then((r) => r.data);
+
+export const createCreditEntry = (entry) =>
+  api.post("/credit/", entry).then((r) => r.data);
+
+export const markCreditPaid = (entryId) =>
+  api.patch(`/credit/${entryId}/paid`).then((r) => r.data);
 
 // ─── Inventory ─────────────────────────────────────────────────────────────
 export const fetchInventory = () =>
@@ -80,8 +96,14 @@ export const fetchInventoryPlanning = () =>
   api.get("/inventory/planning", { timeout: 180000 }).then((r) => r.data);
 
 // ─── Alerts ────────────────────────────────────────────────────────────────
-export const fetchAlerts = () =>
-  api.get("/alerts/").then((r) => r.data);
+export const fetchAlerts = (language = "en") =>
+  api.get(`/alerts/?language=${language}`).then((r) => r.data);
+
+export const sendDailyWhatsapp = () =>
+  api.post("/notify/whatsapp/daily", {}, { timeout: 30000 }).then((r) => r.data);
+
+export const fetchSettings = () => api.get("/settings/").then((r) => r.data);
+export const updateSettings = (settings) => api.patch("/settings/", settings).then((r) => r.data);
 
 // ─── Market ────────────────────────────────────────────────────────────────
 export const fetchMarketTrends = () =>
