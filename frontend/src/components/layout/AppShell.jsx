@@ -5,9 +5,11 @@
 import { useState } from "react";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
+import { useLanguage } from "../../context/LanguageContext";
 
 export default function AppShell({ title, description, children }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { t } = useLanguage();
 
   return (
     <div className="app-shell">
@@ -16,7 +18,7 @@ export default function AppShell({ title, description, children }) {
         onClose={() => setIsMobileMenuOpen(false)} 
       />
       <Topbar 
-        title={title} 
+        title={t(title)}
         description={description} 
         onMenuClick={() => setIsMobileMenuOpen(true)}
       />

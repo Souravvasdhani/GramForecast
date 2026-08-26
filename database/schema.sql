@@ -68,6 +68,7 @@ CREATE TABLE businesses (
   phone            VARCHAR(20),
   email            VARCHAR(200),
   logo_url         VARCHAR(500),
+  settings         JSONB DEFAULT '{}'::jsonb,
   is_active        BOOLEAN DEFAULT TRUE,
   created_at       TIMESTAMPTZ DEFAULT NOW(),
   updated_at       TIMESTAMPTZ DEFAULT NOW()
@@ -142,6 +143,26 @@ CREATE INDEX idx_sales_date         ON sales(sale_date);
 CREATE INDEX idx_sales_biz_date     ON sales(business_id, sale_date DESC);
 
 -- ───────────────────────────────────────────────
+-- credit_entries (udhaar / khata ledger)
+-- ───────────────────────────────────────────────
+CREATE TYPE credit_status AS ENUM ('paid', 'unpaid');
+
+CREATE TABLE credit_entries (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id   UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  customer_name VARCHAR(200) NOT NULL,
+  phone         VARCHAR(20),
+  amount        DECIMAL(12, 2) NOT NULL CHECK (amount > 0),
+  note          TEXT,
+  date          DATE NOT NULL DEFAULT CURRENT_DATE,
+  status        credit_status NOT NULL DEFAULT 'unpaid',
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_credit_entries_business_id ON credit_entries(business_id);
+CREATE INDEX idx_credit_entries_status ON credit_entries(business_id, status);
+
+-- ───────────────────────────────────────────────
 -- forecasts
 -- ───────────────────────────────────────────────
 CREATE TABLE forecasts (
@@ -152,6 +173,8 @@ CREATE TABLE forecasts (
   lower_bound      DECIMAL(12, 3),             -- 80% confidence interval lower
   upper_bound      DECIMAL(12, 3),             -- 80% confidence interval upper
   confidence_level DECIMAL(5, 2),              -- 0–100
+  festival_name    VARCHAR(100),
+  festival_impact_pct DECIMAL(7, 2) DEFAULT 0, -- Prophet holiday component vs baseline
   model_version    VARCHAR(50) DEFAULT 'prophet_v1',
   run_at           TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(product_id, forecast_date, model_version)

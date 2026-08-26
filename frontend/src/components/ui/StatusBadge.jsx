@@ -2,6 +2,8 @@
  * StatusBadge — color-coded inventory/alert status pill.
  * DESIGN.md §4.3 — "Color is never the only signal; always paired with text."
  */
+import { useLanguage } from "../../context/LanguageContext";
+
 const STATUS_MAP = {
   optimal:      { label: "Optimal",       cls: "badge-optimal" },
   low_stock:    { label: "Low Stock",     cls: "badge-low_stock" },
@@ -17,6 +19,7 @@ const STATUS_MAP = {
 };
 
 export default function StatusBadge({ status }) {
+  const { t } = useLanguage();
   const entry = STATUS_MAP[status] ?? { label: status, cls: "bg-gray-100 text-gray-600" };
-  return <span className={`badge ${entry.cls}`}>{entry.label}</span>;
+  return <span className={`badge ${entry.cls}`}>{t(entry.label)}</span>;
 }

@@ -21,6 +21,8 @@ from sqlalchemy import func
 import models
 from config import settings
 
+FORECAST_MODEL_VERSION = "prophet_v2_festival"
+
 logger = logging.getLogger(__name__)
 
 _ML_DIR = Path(__file__).resolve().parent.parent / "ml-service"
@@ -49,6 +51,7 @@ def forecasts_ready(db: Session, business_id) -> bool:
             models.Product.business_id == business_id,
             models.Forecast.forecast_date >= today,
             models.Forecast.forecast_date < next_7,
+            models.Forecast.model_version == FORECAST_MODEL_VERSION,
         )
         .scalar()
         or 0

@@ -6,7 +6,7 @@
  * Zone 3: Inventory Status donut + 7-day Forecast bar + Market Trends mini-feed
  * Zone 4: AI Recommendation banner
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   TrendingUp, IndianRupee, Package, AlertTriangle,
   ArrowUpRight, ArrowDownRight, Minus, RefreshCw,
@@ -20,8 +20,10 @@ import StatusBadge from "../components/ui/StatusBadge";
 import DemandChart from "../components/charts/DemandChart";
 import ForecastBar from "../components/charts/ForecastBar";
 import DonutChart  from "../components/charts/DonutChart";
-import { fetchDashboardSummary, triggerForecastRun } from "../api/client";
+import AddSaleModal from "../components/sales/AddSaleModal";
+import { fetchDashboardSummary, sendDailyWhatsapp, triggerForecastRun } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { useLanguage } from "../context/LanguageContext";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const fmt = (n, opts = {}) =>
@@ -45,15 +47,20 @@ const INV_LABELS  = ["Optimal", "Low Stock", "Out of Stock", "Overstock"];
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user } = useAuth();
+  const { language, t } = useLanguage();
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [isSaleOpen, setIsSaleOpen] = useState(false);
+  const [whatsappState, setWhatsappState] = useState(null);
+  const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
+  const autoWhatsappSent = useRef(false);
 
   const loadData = async () => {
     try {
       setError(null);
-      const d = await fetchDashboardSummary();
+      const d = await fetchDashboardSummary(language);
       setData(d);
     } catch (e) {
       setError(e.response?.data?.detail || e.message || "Failed to load dashboard.");
@@ -63,7 +70,26 @@ export default function Dashboard() {
     }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, [language]);
+
+  useEffect(() => {
+    if (!data || !data.kpis?.out_of_stock_count || autoWhatsappSent.current) return;
+    autoWhatsappSent.current = true;
+    sendDailyWhatsapp()
+      .then((result) => setWhatsappState(result))
+      .catch(() => {});
+  }, [data]);
+
+  const handleWhatsapp = async () => {
+    setSendingWhatsapp(true);
+    try {
+      setWhatsappState(await sendDailyWhatsapp());
+    } catch (e) {
+      setWhatsappState({ preview: "WhatsApp plan could not be prepared. Please try again." });
+    } finally {
+      setSendingWhatsapp(false);
+    }
+  };
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -115,19 +141,25 @@ export default function Dashboard() {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h2 className="text-gray-700 text-sm font-medium">
-            Welcome back, <span className="text-brand-mid font-semibold">{user?.name ?? "there"}</span> 👋
+            {t("Welcome back,")} <span className="text-brand-mid font-semibold">{user?.name ?? "there"}</span> 👋
           </h2>
-          <p className="text-gray-400 text-xs">Here's how your business is looking today.</p>
+          <p className="text-gray-400 text-xs">{t("Here's how your business is looking today.")}</p>
         </div>
-        <button
-          id="dashboard-refresh-btn"
-          onClick={handleRefresh}
-          className={`btn-outline flex items-center gap-1.5 ${refreshing ? "opacity-60" : ""}`}
-          disabled={refreshing}
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={handleWhatsapp} disabled={sendingWhatsapp} className="btn-outline">{sendingWhatsapp ? t("Sending...") : t("Send today's plan to WhatsApp")}</button>
+            <button type="button" onClick={() => setIsSaleOpen(true)} className="btn-action">+ Add Sale / बिक्री जोड़ें</button>
+          </div>
+          <button
+            id="dashboard-refresh-btn"
+            onClick={handleRefresh}
+            className={`btn-outline flex items-center gap-1.5 ${refreshing ? "opacity-60" : ""}`}
+            disabled={refreshing}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+              {t("Refresh")}
+          </button>
+        </div>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
@@ -136,7 +168,7 @@ export default function Dashboard() {
       <div id="dashboard-kpi-cards" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <KpiCard
           icon={TrendingUp}
-          label="Predicted Demand (7d)"
+          label={t("Predicted Demand (7d)")}
           value={loading ? "—" : `${fmt(kpis.predicted_demand_7d || 0, { maximumFractionDigits: 0 })}`}
           unit="units"
           trendPct={loading ? undefined : kpis.demand_delta_pct ?? undefined}
@@ -146,7 +178,7 @@ export default function Dashboard() {
         />
         <KpiCard
           icon={IndianRupee}
-          label="Total Sales (7 days)"
+          label={t("Total Sales (7 days)")}
           value={loading ? "—" : fmtRs(kpis.total_sales_7d || 0)}
           trendPct={loading ? undefined : kpis.sales_delta_pct}
           iconBg="bg-green-50"
@@ -155,7 +187,7 @@ export default function Dashboard() {
         />
         <KpiCard
           icon={Package}
-          label="Inventory in Hand"
+          label={t("Inventory in Hand")}
           value={loading ? "—" : fmtRs(kpis.inventory_value || 0)}
           iconBg="bg-purple-50"
           iconColor="text-purple-500"
@@ -163,7 +195,7 @@ export default function Dashboard() {
         />
         <KpiCard
           icon={AlertTriangle}
-          label="Stock-Out Risk"
+          label={t("Stock-Out Risk")}
           value={loading ? "—" : `${(kpis.out_of_stock_count || 0) + (kpis.low_stock_count || 0)}`}
           unit={((kpis.out_of_stock_count || 0) + (kpis.low_stock_count || 0)) === 1 ? "product" : "products"}
           trendLabel="need attention"
@@ -181,17 +213,17 @@ export default function Dashboard() {
         <div className="content-card lg:col-span-3">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="font-semibold text-gray-800 text-sm">Demand Prediction Overview</h3>
+              <h3 className="font-semibold text-gray-800 text-sm">{t("Demand Prediction Overview")}</h3>
               <p className="text-gray-400 text-xs">Actual sales vs AI forecast — last 14 days + next 7 days</p>
             </div>
             <div className="flex items-center gap-3 text-xs">
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-0.5 bg-brand-mid rounded inline-block" />
-                <span className="text-gray-500">Actual</span>
+                <span className="text-gray-500">{t("Actual")}</span>
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-0.5 bg-info rounded inline-block" style={{ borderTop: "2px dashed #3B82F6", height: 0 }} />
-                <span className="text-gray-500">Predicted</span>
+                <span className="text-gray-500">{t("Predicted")}</span>
               </span>
             </div>
           </div>
@@ -204,7 +236,7 @@ export default function Dashboard() {
 
         {/* Top Products table — 40% */}
         <div className="content-card lg:col-span-2 flex flex-col">
-          <h3 className="font-semibold text-gray-800 text-sm mb-4">Top Products</h3>
+          <h3 className="font-semibold text-gray-800 text-sm mb-4">{t("Top Products")}</h3>
           {loading ? (
             <div className="space-y-3">
               {[...Array(5)].map((_, i) => (
@@ -256,7 +288,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
         {/* Inventory Status donut */}
         <div className="content-card">
-          <h3 className="font-semibold text-gray-800 text-sm mb-3">Inventory Status</h3>
+          <h3 className="font-semibold text-gray-800 text-sm mb-3">{t("Inventory Status")}</h3>
           {loading ? (
             <div className="skeleton h-44 rounded-xl" />
           ) : (
@@ -272,7 +304,7 @@ export default function Dashboard() {
 
         {/* 7-day Forecast bar */}
         <div className="content-card">
-          <h3 className="font-semibold text-gray-800 text-sm mb-3">Demand Forecast — Next 7 Days</h3>
+          <h3 className="font-semibold text-gray-800 text-sm mb-3">{t("Demand Forecast — Next 7 Days")}</h3>
           <p className="text-gray-400 text-xs mb-3">Total units across all products</p>
           {loading ? (
             <div className="skeleton h-44 rounded-xl" />
@@ -293,7 +325,7 @@ export default function Dashboard() {
 
         {/* Market Trends mini-feed */}
         <div className="content-card">
-          <h3 className="font-semibold text-gray-800 text-sm mb-3">Market Signals</h3>
+          <h3 className="font-semibold text-gray-800 text-sm mb-3">{t("Market Signals")}</h3>
           {loading ? (
             <div className="space-y-3">
               {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-10 rounded-lg" />)}
@@ -335,6 +367,16 @@ export default function Dashboard() {
           <Link id="restock-now-btn" to="/planning" className="btn-action">Restock Now <ArrowUpRight className="w-3.5 h-3.5" /></Link>
         </div>
       </div>
+      <AddSaleModal isOpen={isSaleOpen} onClose={() => setIsSaleOpen(false)} onSuccess={loadData} />
+      {whatsappState && (
+        <div className="fixed bottom-24 right-5 z-[80] w-[min(380px,calc(100vw-2rem))] rounded-2xl border border-green-200 bg-white p-4 shadow-2xl sm:right-6">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-sm font-bold text-green-800">{whatsappState.sent ? t("WhatsApp message sent") : t("WhatsApp preview")}</p>
+            <button type="button" onClick={() => setWhatsappState(null)} className="text-xs text-gray-400 hover:text-gray-700" aria-label="Close WhatsApp preview">{t("Close")}</button>
+          </div>
+          <p className="whitespace-pre-wrap text-xs leading-relaxed text-gray-600">{whatsappState.preview}</p>
+        </div>
+      )}
     </AppShell>
   );
 }

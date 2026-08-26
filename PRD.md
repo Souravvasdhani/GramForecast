@@ -225,4 +225,4 @@ Give every village enterprise the same demand-sensing power a large FMCG distrib
 - Reduced inventory losses — delivered via Inventory Management + Planning (status flags, recommended production, safety stock).
 - Improved production planning — delivered via Inventory Planning's recommended production numbers.
 - Increased business profitability — delivered via Sales Analytics + AI Recommendation narratives quantifying upside.
-- Better market responsiveness — delivered via Market Trends + Alerts & Notifications.
+- Better market responsiveness — delivered via Market Trends + Alerts & Notifications...

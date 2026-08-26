@@ -1,7 +1,8 @@
 """Dashboard router — KPI summary + chart data for the home screen."""
 
+import logging
 from datetime import date, timedelta
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, Date
 
@@ -11,15 +12,20 @@ from auth_utils import get_current_user
 from forecast_runner import ensure_forecasts
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/summary")
 def dashboard_summary(
+    language: str = Query("en", pattern="^(en|hi|mr)$"),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     business_id = current_user.business_id
-    ensure_forecasts(db, business_id)
+    try:
+        ensure_forecasts(db, business_id)
+    except Exception:
+        logger.exception("Unable to refresh forecasts for dashboard: %s", business_id)
 
     # Determine 'today' dynamically based on latest sale date, falling back to actual today
     latest_sale = db.query(func.max(models.Sale.sale_date)).filter(models.Sale.business_id == business_id).scalar()
@@ -154,6 +160,7 @@ def dashboard_summary(
             models.Product.current_stock,
             models.Product.ideal_stock,
             models.Product.safety_stock,
+            models.Product.reorder_point,
             models.Product.selling_price,
             func.sum(models.Sale.quantity).label("sales_7d"),
         )
@@ -166,6 +173,7 @@ def dashboard_summary(
             models.Product.id, models.Product.name, models.Product.category,
             models.Product.unit, models.Product.current_stock,
             models.Product.ideal_stock, models.Product.safety_stock,
+            models.Product.reorder_point,
             models.Product.selling_price,
         )
         .order_by(func.sum(models.Sale.quantity).desc())
@@ -296,9 +304,14 @@ def dashboard_summary(
     )
 
     if top_alert:
+        alert_message = top_alert.message
+        if language == "mr":
+            alert_message = f"तातडीचे लक्ष द्या: {top_alert.message}"
+        elif language == "hi":
+            alert_message = f"तत्काल ध्यान दें: {top_alert.message}"
         ai_recommendation = {
-            "headline": top_alert.message,
-            "detail":   "Review the alert and act before the next demand spike or stockout window.",
+            "headline": alert_message,
+            "detail":   "मागणी वाढण्यापूर्वी किंवा साठा संपण्यापूर्वी या सूचनेवर कृती करा." if language == "mr" else "अगली मांग बढ़ने या स्टॉक खत्म होने से पहले इस अलर्ट पर कार्रवाई करें।" if language == "hi" else "Review the alert and act before the next demand spike or stockout window.",
             "priority": top_alert.priority,
         }
     elif forecast_by_product:
@@ -309,20 +322,20 @@ def dashboard_summary(
         if current_stock < safety_stock:
             shortage = max(0, safety_stock - current_stock)
             ai_recommendation = {
-                "headline": f"{product_name} is running {shortage:.0f} units below its safety stock buffer.",
-                "detail": f"Forecasted demand is {forecast_7d:.0f} units next 7 days; current stock is {current_stock:.0f} units.",
+                "headline": f"{product_name} चा साठा सुरक्षा पातळीपेक्षा {shortage:.0f} युनिट कमी आहे." if language == "mr" else f"{product_name} का स्टॉक सुरक्षा सीमा से {shortage:.0f} इकाई कम है।" if language == "hi" else f"{product_name} is running {shortage:.0f} units below its safety stock buffer.",
+                "detail": f"पुढील ७ दिवसांची अंदाजित मागणी {forecast_7d:.0f} युनिट आहे; सध्याचा साठा {current_stock:.0f} युनिट आहे." if language == "mr" else f"अगले 7 दिनों की अनुमानित मांग {forecast_7d:.0f} इकाई है; वर्तमान स्टॉक {current_stock:.0f} इकाई है।" if language == "hi" else f"Forecasted demand is {forecast_7d:.0f} units next 7 days; current stock is {current_stock:.0f} units.",
                 "priority": "high",
             }
         else:
             ai_recommendation = {
-                "headline": f"{product_name} leads next-week demand with a forecast of {forecast_7d:.0f} units.",
-                "detail": f"Current stock is {current_stock:.0f} units, which is enough to cover the forecast with a healthy buffer.",
+                "headline": f"{product_name} ची पुढील आठवड्यात सर्वाधिक मागणी, अंदाज {forecast_7d:.0f} युनिट आहे." if language == "mr" else f"{product_name} की अगले सप्ताह सबसे अधिक मांग, अनुमान {forecast_7d:.0f} इकाई है।" if language == "hi" else f"{product_name} leads next-week demand with a forecast of {forecast_7d:.0f} units.",
+                "detail": f"सध्याचा साठा {current_stock:.0f} युनिट आहे, जो अंदाजित मागणीसाठी पुरेसा आहे." if language == "mr" else f"वर्तमान स्टॉक {current_stock:.0f} इकाई है, जो अनुमानित मांग के लिए पर्याप्त है।" if language == "hi" else f"Current stock is {current_stock:.0f} units, which is enough to cover the forecast with a healthy buffer.",
                 "priority": "low",
             }
     else:
         ai_recommendation = {
-            "headline": "No forecast data is available yet for this business.",
-            "detail": "Run the forecasting model to generate the first AI recommendation for your products.",
+            "headline": "इस कारोबार के लिए अभी पूर्वानुमान डेटा उपलब्ध नहीं है।" if language == "hi" else "No forecast data is available yet for this business.",
+            "detail": "अपने उत्पादों के लिए पहला AI सुझाव पाने हेतु पूर्वानुमान मॉडल चलाएं।" if language == "hi" else "Run the forecasting model to generate the first AI recommendation for your products.",
             "priority": "low",
         }
 

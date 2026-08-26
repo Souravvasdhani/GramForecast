@@ -32,6 +32,11 @@ class ForecastRunRequest(BaseModel):
     business_id: str
 
 
+class BacktestRequest(BaseModel):
+    product_id: str
+    category: str | None = None
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "ml-service"}
@@ -54,6 +59,19 @@ def trigger_forecast(req: ForecastRunRequest):
 @app.get("/forecast/status/{business_id}")
 def forecast_status(business_id: str):
     return _job_status.get(business_id, {"status": "not_started"})
+
+
+@app.post("/forecast/backtest")
+def forecast_backtest(req: BacktestRequest):
+    """Evaluate the same held-out window used during forecast generation."""
+    import forecaster
+
+    conn = forecaster._connect()
+    try:
+        frame = forecaster.load_sales(conn, req.product_id)
+        return forecaster.backtest_series(frame, req.category)
+    finally:
+        conn.close()
 
 
 @app.post("/forecast/run-all")

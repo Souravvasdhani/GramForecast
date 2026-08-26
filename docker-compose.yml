@@ -9,9 +9,9 @@ services:
     container_name: gramforecast_db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-gramforecast}
-      POSTGRES_USER: ${DB_USER:-gramuser}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-grampassword}
+      POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     ports:
       - "5432:5432"
     volumes:
@@ -33,13 +33,14 @@ services:
     container_name: gramforecast_backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-gramuser}:${DB_PASSWORD:-grampassword}@postgres:5432/${DB_NAME:-gramforecast}
-      JWT_SECRET: ${JWT_SECRET:-supersecretjwtkeychangeinprod}
+      DATABASE_URL: postgresql://${DB_USER:?DB_USER is required}:${DB_PASSWORD:?DB_PASSWORD is required}@postgres:5432/${DB_NAME:?DB_NAME is required}
+      ML_SERVICE_URL: http://ml-service:8001
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_ALGORITHM: HS256
       JWT_EXPIRE_MINUTES: 1440
       CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
       GROQ_API_KEY: ${GROQ_API_KEY}
-      ML_SERVICE_URL: http://ml-service:8001
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
     ports:
       - "8000:8000"
     depends_on:
@@ -47,8 +48,6 @@ services:
         condition: service_healthy
       ml-service:
         condition: service_started
-    volumes:
-      - ./backend:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   # ─────────────────────────────────────────────
@@ -61,14 +60,13 @@ services:
     container_name: gramforecast_ml
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-gramuser}:${DB_PASSWORD:-grampassword}@postgres:5432/${DB_NAME:-gramforecast}
+      DATABASE_URL: postgresql://${DB_USER:?DB_USER is required}:${DB_PASSWORD:?DB_PASSWORD is required}@postgres:5432/${DB_NAME:?DB_NAME is required}
+      ML_SERVICE_URL: http://ml-service:8001
     ports:
       - "8001:8001"
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./ml-service:/app
     command: uvicorn api:app --host 0.0.0.0 --port 8001 --reload
 
   # ─────────────────────────────────────────────
@@ -80,12 +78,10 @@ services:
       dockerfile: Dockerfile
     container_name: gramforecast_seeder
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-gramuser}:${DB_PASSWORD:-grampassword}@postgres:5432/${DB_NAME:-gramforecast}
+      DATABASE_URL: postgresql://${DB_USER:?DB_USER is required}:${DB_PASSWORD:?DB_PASSWORD is required}@postgres:5432/${DB_NAME:?DB_NAME is required}
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./database:/app
     command: python seed.py
     profiles:
       - seed  # Run manually: docker compose --profile seed up seeder

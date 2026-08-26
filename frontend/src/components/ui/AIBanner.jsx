@@ -5,6 +5,7 @@
  */
 import { Bot, AlertTriangle, Info, CheckCircle } from "lucide-react";
 import { clsx } from "clsx";
+import { useLanguage } from "../../context/LanguageContext";
 
 const PRIORITY_CONFIG = {
   high:   { icon: AlertTriangle, border: "border-red-200",   bg: "from-red-50 to-orange-50",  iconCls: "text-red-500",   label: "Urgent Action Needed" },
@@ -14,6 +15,7 @@ const PRIORITY_CONFIG = {
 };
 
 export default function AIBanner({ headline, detail, priority = "default", loading = false }) {
+  const { t } = useLanguage();
   if (loading) {
     return (
       <div className="rounded-2xl p-5 border border-gray-100 bg-gray-50">
@@ -48,7 +50,7 @@ export default function AIBanner({ headline, detail, priority = "default", loadi
           {/* Text */}
           <div className="flex-1 min-w-0">
             <p className={clsx("text-xs font-semibold uppercase tracking-wider mb-1", cfg.iconCls)}>
-              🤖 {cfg.label}
+              🤖 {t(cfg.label)}
             </p>
             <p className="text-gray-900 font-semibold text-sm leading-snug mb-1">{headline}</p>
             {detail && <p className="text-gray-500 text-xs leading-relaxed">{detail}</p>}

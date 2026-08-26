@@ -9,16 +9,17 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import {
-  Brain, Calendar, Target, TrendingUp, BarChart2,
+  Brain, Calendar, Target, TrendingUp, BarChart2, PartyPopper,
   AlertTriangle, ChevronDown, RefreshCw,
 } from "lucide-react";
 
 import AppShell      from "../components/layout/AppShell";
 import KpiCard       from "../components/ui/KpiCard";
 import AIBanner      from "../components/ui/AIBanner";
-import DemandChart   from "../components/charts/DemandChart";
 import ForecastBar   from "../components/charts/ForecastBar";
+import ForecastTrustPanel from "../components/charts/ForecastTrustPanel";
 import { fetchAllForecasts, fetchProductForecast, fetchProducts } from "../api/client";
+import { useLanguage } from "../context/LanguageContext";
 
 const fmt = (n, d = 1) => Number(n || 0).toFixed(d);
 
@@ -26,9 +27,13 @@ const IMPACT_CONFIG = {
   High:   { dot: "bg-danger",   bar: "bg-red-200",    width: "w-full",    label: "text-red-600" },
   Medium: { dot: "bg-warning",  bar: "bg-amber-200",  width: "w-2/3",     label: "text-amber-600" },
   Low:    { dot: "bg-info",     bar: "bg-blue-100",   width: "w-1/3",     label: "text-blue-500" },
+  उच्च:   { dot: "bg-danger",   bar: "bg-red-200",    width: "w-full",    label: "text-red-600" },
+  मध्यम:  { dot: "bg-warning",  bar: "bg-amber-200",  width: "w-2/3",     label: "text-amber-600" },
+  कम:     { dot: "bg-info",     bar: "bg-blue-100",   width: "w-1/3",     label: "text-blue-500" },
 };
 
 export default function DemandPrediction() {
+  const { language, t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   const [products,     setProducts]     = useState([]);
   const [selectedId,   setSelectedId]   = useState(searchParams.get("product") || null);
@@ -57,7 +62,7 @@ export default function DemandPrediction() {
     setSearchParams({ product: selectedId });
 
     Promise.all([
-      fetchProductForecast(selectedId),
+      fetchProductForecast(selectedId, language),
       fetchAllForecasts().catch(() => ({ products: [] })),
     ])
       .then(([forecast, all]) => {
@@ -66,15 +71,15 @@ export default function DemandPrediction() {
       })
       .catch((e) => setError(e.response?.data?.detail || e.message))
       .finally(() => setLoading(false));
-  }, [selectedId]);
+  }, [selectedId, language]);
 
   const kpis      = forecastData?.kpis ?? {};
-  const chartData = forecastData?.chart_data ?? [];
   const barData   = forecastData?.forecast_bar ?? [];
   const factors   = forecastData?.prediction_factors ?? [];
   const product   = forecastData?.product ?? {};
   const insight   = forecastData?.ai_insight ?? "";
   const allProds  = overview?.products ?? [];
+  const festivalImpacts = forecastData?.upcoming_festival_impact ?? [];
 
   return (
     <AppShell
@@ -90,7 +95,7 @@ export default function DemandPrediction() {
 
       {/* ── Product Selector ────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 mb-5 flex-wrap">
-        <span className="text-gray-500 text-sm font-medium">Product:</span>
+                <span className="text-gray-500 text-sm font-medium">{t("product")}:</span>
         <div className="relative">
           <select
             id="demand-product-selector"
@@ -122,7 +127,7 @@ export default function DemandPrediction() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <KpiCard
           icon={Brain}
-          label="Forecast Accuracy"
+            label={t("Forecast Accuracy")}
           value={loading ? "—" : `${fmt(kpis.avg_confidence_pct, 1)}%`}
           iconBg="bg-purple-50"
           iconColor="text-purple-500"
@@ -130,7 +135,7 @@ export default function DemandPrediction() {
         />
         <KpiCard
           icon={TrendingUp}
-          label="AI Demand Forecast"
+          label={t("AI Demand Forecast")}
           value={loading ? "—" : `${fmt(kpis.total_forecast_7d, 0)}`}
           unit={product.unit}
           trendLabel="next 7 days"
@@ -140,15 +145,15 @@ export default function DemandPrediction() {
         />
         <KpiCard
           icon={Calendar}
-          label="Peak Demand Day"
-          value={loading || !kpis.peak_day ? "—" : new Date(kpis.peak_day).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+          label={t("Peak Demand Day")}
+          value={loading || !kpis.peak_day ? "—" : new Date(kpis.peak_day).toLocaleDateString(language === "mr" ? "mr-IN" : language === "hi" ? "hi-IN" : "en-IN", { weekday: "short", day: "numeric", month: "short" })}
           iconBg="bg-amber-50"
           iconColor="text-warning"
           loading={loading}
         />
         <KpiCard
           icon={Target}
-          label="Recommended Reorder"
+          label={t("Recommended Reorder")}
           value={loading ? "—" : `${fmt(kpis.recommended_order, 0)}`}
           unit={product.unit}
           trendLabel="to meet demand + safety stock"
@@ -158,38 +163,50 @@ export default function DemandPrediction() {
         />
       </div>
 
+      <div className="content-card mb-5 border-l-4 border-amber-400">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-lg bg-amber-50 text-amber-600"><PartyPopper className="w-5 h-5" /></div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-gray-800 text-sm">{t("Upcoming festival impact")}</h3>
+            <p className="text-gray-400 text-xs mt-1">{t("Model-derived demand uplift for this product")}</p>
+            {loading ? (
+              <div className="skeleton h-12 rounded-lg mt-3" />
+            ) : festivalImpacts.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                {festivalImpacts.map((festival) => (
+                  <div key={`${festival.festival}-${festival.date}`} className="rounded-lg bg-amber-50/60 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-gray-800">{festival.festival}</span>
+                      <span className="text-sm font-bold text-amber-700">+{fmt(festival.impact_pct)}%</span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {new Date(festival.date).toLocaleDateString(language === "mr" ? "mr-IN" : language === "hi" ? "hi-IN" : "en-IN", { day: "numeric", month: "short" })}
+                      {" · "}{t("Affected products")}: {festival.affected_products.join(", ")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-400 text-xs mt-3">{t("No upcoming festival signal in this forecast window.")}</p>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* ZONE 2 — Actual vs Predicted chart + Prediction Factors          */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-5">
         {/* Chart — 60% */}
-        <div className="content-card lg:col-span-3">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-semibold text-gray-800 text-sm">
-                {product.name || "Product"} — Actual vs Predicted
-              </h3>
-              <p className="text-gray-400 text-xs">
-                Last 28 days of actual sales + 7-day AI forecast with confidence band
-              </p>
-            </div>
-          </div>
-          {loading ? (
-            <div className="skeleton h-[300px] rounded-xl" />
-          ) : chartData.length > 0 ? (
-            <DemandChart data={chartData} height={300} showLegend={true} />
-          ) : (
-            <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">
-              Forecast not yet generated for this product.
-            </div>
-          )}
+        <div className="lg:col-span-3">
+          <ForecastTrustPanel forecastData={forecastData} loading={loading} />
         </div>
 
         {/* Prediction Factors — 40% (KEY TRUST BUILDING per DESIGN.md §5.3) */}
         <div className="content-card lg:col-span-2">
-          <h3 className="font-semibold text-gray-800 text-sm mb-1">Prediction Factors</h3>
+          <h3 className="font-semibold text-gray-800 text-sm mb-1">{t("Prediction Factors")}</h3>
           <p className="text-gray-400 text-xs mb-4">
-            Why this forecast? Key drivers and their impact level.
+            {t("Why this forecast? Key drivers and their impact level.")}
           </p>
           {loading ? (
             <div className="space-y-4">
@@ -300,7 +317,7 @@ export default function DemandPrediction() {
       {/* ══════════════════════════════════════════════════════════════════ */}
       <AIBanner
         headline={insight || "Run the Prophet forecasting model to get your AI forecast insight for this product."}
-        detail={`Forecast accuracy: ${fmt(kpis.avg_confidence_pct, 1)}% | Model: Prophet (Indian festival calendar aware) | Updated daily`}
+        detail={`${t("Forecast accuracy")}: ${fmt(kpis.avg_confidence_pct, 1)}% | ${t("Model")}: Prophet | ${t("Updated daily")}`}
         priority="low"
         loading={loading}
       />
